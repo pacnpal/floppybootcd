@@ -82,8 +82,16 @@ def _run_streaming(
             m = progress_re.search(line)
             if m:
                 try:
-                    progress(line, float(m.group(1)) / 100.0)
-                except (ValueError, IndexError):
+                    if m.lastindex and m.lastindex >= 2:
+                        # Two captures = current/total (e.g. "350 of 700 MB").
+                        cur = float(m.group(1))
+                        total = float(m.group(2))
+                        frac = cur / total if total else 0.0
+                    else:
+                        # Single capture = a 0-100 percent value.
+                        frac = float(m.group(1)) / 100.0
+                    progress(line, max(0.0, min(1.0, frac)))
+                except (ValueError, IndexError, ZeroDivisionError):
                     pass
     return proc.wait()
 

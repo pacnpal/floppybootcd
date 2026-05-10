@@ -50,10 +50,8 @@ class TestRunStreaming:
         assert "world" in logs
 
     def test_progress_regex_extracts_percentage(self):
-        # _run_streaming treats group(1) as a 0-100 percent literal and
-        # divides by 100, so feed it real percent output rather than an
-        # "X of Y" pair (the latter would only happen to be right when Y
-        # equals 100).
+        # Single capture = a 0-100 percent literal, so _run_streaming
+        # divides by 100 to yield a 0..1 fraction.
         progress_calls: list[tuple[str, float]] = []
         rc = _run_streaming(
             [sys.executable, "-c", "print('progress 42%')"],
@@ -65,6 +63,46 @@ class TestRunStreaming:
         assert progress_calls
         _, frac = progress_calls[0]
         assert frac == pytest.approx(0.42)
+
+    def test_progress_regex_uses_two_captures_as_ratio(self):
+        # Two captures = current/total, the form cdrecord actually emits
+        # ("Track 01: 50 of 700 MB"). Reporting group(1)/100 here would
+        # be wildly wrong (50% complete on a 7%-burned disc).
+        progress_calls: list[tuple[str, float]] = []
+        rc = _run_streaming(
+            [sys.executable, "-c", "print('Track 01: 50 of 700 MB')"],
+            log=lambda _: None,
+            progress=lambda m, f: progress_calls.append((m, f)),
+            progress_re=re.compile(r"Track \d+:\s+(\d+) of (\d+) MB"),
+        )
+        assert rc == 0
+        assert progress_calls
+        _, frac = progress_calls[0]
+        assert frac == pytest.approx(50 / 700)
+
+    def test_progress_clamped_to_unit_interval(self):
+        # Defensive: malformed output that would yield > 1.0 must clamp.
+        progress_calls: list[tuple[str, float]] = []
+        _run_streaming(
+            [sys.executable, "-c", "print('p 250%')"],
+            log=lambda _: None,
+            progress=lambda m, f: progress_calls.append((m, f)),
+            progress_re=re.compile(r"p (\d+)%"),
+        )
+        assert progress_calls[0][1] == 1.0
+
+    def test_progress_zero_total_does_not_crash(self):
+        # ZeroDivisionError must be swallowed.
+        progress_calls: list[tuple[str, float]] = []
+        rc = _run_streaming(
+            [sys.executable, "-c", "print('Track 01: 0 of 0 MB')"],
+            log=lambda _: None,
+            progress=lambda m, f: progress_calls.append((m, f)),
+            progress_re=re.compile(r"Track \d+:\s+(\d+) of (\d+) MB"),
+        )
+        assert rc == 0
+        # 0/0 → frac 0.0
+        assert progress_calls and progress_calls[0][1] == 0.0
 
     def test_nonzero_exit_returned(self):
         rc = _run_streaming(
