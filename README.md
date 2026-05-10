@@ -14,11 +14,112 @@ operating systems boot exactly as they would from physical media.
 
 ## Quick start
 
-> **Note:** FloppyBootCD installs straight from this GitHub repo. It is not
-> on PyPI. The commands below all use the
+The fastest way to get running is to grab a prebuilt binary from the
+[Releases page](https://github.com/pacnpal/floppybootcd/releases/latest).
+No Python, no `uv`, no `pip`. If you'd rather install from source, the
+per-platform `uv tool install` instructions follow further down.
+
+### Download a prebuilt binary (recommended)
+
+Each tagged release publishes a self-contained bundle for every supported
+platform. Pick the one that matches your machine:
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon, M1/M2/M3/M4) | `floppybootcd-<version>-macos-arm64.zip` |
+| macOS (Intel) | `floppybootcd-<version>-macos-x86_64.zip` |
+| Windows (x86_64) | `floppybootcd-<version>-windows-x86_64.zip` |
+| Linux (x86_64) | `floppybootcd-<version>-linux-x86_64.tar.gz` |
+
+You will still need `xorriso` installed system-wide — see
+[System dependency: xorriso](#system-dependency-xorriso). The bundle
+contains FloppyBootCD itself plus the bundled Python and PySide6 runtime;
+syslinux modules continue to be fetched on first build, as usual.
+
+#### macOS
+
+```bash
+# 1. Unzip the download.
+cd ~/Downloads
+unzip floppybootcd-<version>-macos-arm64.zip
+
+# 2. macOS quarantines apps downloaded from the web, and (since macOS 15
+#    Sequoia) blocks them outright with no right-click "Open" bypass.
+#    FloppyBootCD is unsigned and unnotarized, so strip the quarantine
+#    attribute before first launch:
+xattr -dr com.apple.quarantine floppybootcd.app
+
+# 3. Move it where you like and launch it.
+mv floppybootcd.app /Applications/
+open /Applications/floppybootcd.app
+
+# 4. (Required) install xorriso.
+brew install xorriso
+```
+
+If you'd rather not touch the terminal: double-click the app, let macOS
+block it, then go to **System Settings → Privacy & Security**, scroll to
+the bottom, and click **Open Anyway** next to the FloppyBootCD entry.
+Confirm in the next dialog. On macOS 15+ this flow has replaced the older
+right-click → Open trick.
+
+> Why the quarantine step? Apple's Gatekeeper requires apps to be both
+> code-signed with a Developer ID and notarized through Apple's service
+> before they'll launch from a downloaded zip without a warning. This
+> project does not currently distribute signed builds — the binaries are
+> ad-hoc signed by PyInstaller, which is enough to satisfy the macOS
+> loader but not Gatekeeper. The `xattr` command above removes the
+> "downloaded from the internet" flag, which is what triggers the block;
+> it does not disable Gatekeeper or bypass any other security check.
+
+#### Windows
+
+```powershell
+# 1. Unzip the download to wherever you want it (e.g. C:\Tools\).
+Expand-Archive .\floppybootcd-<version>-windows-x86_64.zip -DestinationPath C:\Tools\
+
+# 2. Run it.
+C:\Tools\floppybootcd\floppybootcd.exe
+
+# 3. (Required) install xorriso.
+scoop install xorriso
+```
+
+The first time you launch it, **Windows SmartScreen** may show a
+"Windows protected your PC" dialog because the binary is unsigned. Click
+**More info** → **Run anyway**.
+
+#### Linux
+
+```bash
+# 1. Extract.
+tar -xzf floppybootcd-<version>-linux-x86_64.tar.gz
+cd floppybootcd
+
+# 2. Run it.
+./floppybootcd
+
+# 3. (Required) install xorriso.
+sudo apt install xorriso        # Debian / Ubuntu
+sudo dnf install xorriso        # Fedora / RHEL
+sudo pacman -S libisoburn       # Arch
+```
+
+The Linux bundle ships with the Qt runtime and platform plugins it needs,
+so no extra system Qt install is required. If `./floppybootcd` complains
+about a missing X/Wayland library on a minimal distro, install the
+typical desktop runtime (`libxkbcommon`, `libegl1`, `libfontconfig`,
+`libxcb-cursor0`, etc.).
+
+---
+
+### Install from source (uv)
+
+> **Note:** FloppyBootCD installs straight from this GitHub repo. It is
+> not on PyPI. The commands below all use the
 > `git+https://github.com/pacnpal/floppybootcd` source.
 
-### macOS
+#### macOS
 
 ```bash
 # 1. Install uv (skip if you already have it).
@@ -55,7 +156,7 @@ Or skip installing entirely:
 uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 ```
 
-### Linux
+#### Linux
 
 ```bash
 # 1. Install uv (skip if you already have it).
@@ -94,7 +195,7 @@ Or skip installing entirely:
 uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 ```
 
-### Windows
+#### Windows
 
 In **PowerShell**:
 
@@ -137,7 +238,8 @@ uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 
 ### Where uv puts everything
 
-When you run `uv tool install floppybootcd`, two things land on disk:
+When you run `uv tool install git+https://github.com/pacnpal/floppybootcd`,
+two things land on disk:
 
 | What | macOS / Linux | Windows |
 |------|---------------|---------|
@@ -289,8 +391,17 @@ command instead.)
 
 ## Installing FloppyBootCD
 
-FloppyBootCD is installed directly from this Git repository. It is not
-published to PyPI.
+You have two options:
+
+1. **Download a prebuilt binary** from the
+   [Releases page](https://github.com/pacnpal/floppybootcd/releases/latest).
+   No Python required. See
+   [Quick start → Download a prebuilt binary](#download-a-prebuilt-binary-recommended)
+   above for per-platform instructions, including the macOS Gatekeeper
+   workaround.
+2. **Install from source** with `uv` or `pip`. FloppyBootCD installs
+   directly from this Git repository — it is not published to PyPI. The
+   rest of this section covers that path.
 
 ### What `uv tool install` actually does
 
@@ -469,8 +580,7 @@ Each image has its own boot menu label (what shows up at boot time). The
 filename is the default label. To change it:
 
 - **Double-click** the entry, or
-- Select it and click **Edit...**, or
-- Select it and press Enter
+- Select it and click **Edit...**
 
 The label can include a hotkey marker: in the menu, the character after a
 `^` becomes a keyboard shortcut and is highlighted. For example,
@@ -492,7 +602,7 @@ The **Project** panel at the top controls disc-wide settings:
 |---------|--------------|
 | **Disc title** | Shows up as the ISO 9660 volume label and as the menu title at boot |
 | **Bootloader** | Which bootloader to use. ISOLINUX (BIOS) is the default; plugins can register more (e.g. GRUB4DOS) |
-| **Menu style** | "Text menu" uses `menu.c32`. "Graphical menu" uses `vesamenu.c32` and supports a background image |
+| **Menu style** | "Text menu" uses `menu.c32`. "Graphical menu" uses `vesamenu.c32` (a `background_image` path can be set in the saved `.fbcd` file) |
 | **Boot timeout** | Seconds to wait before auto-booting the default entry. Set to 0 ("No auto-boot") to wait forever |
 
 ### Saving and loading projects
@@ -584,9 +694,8 @@ FloppyBootCD respects each OS's conventions:
 
 | Data | macOS | Windows | Linux |
 |------|-------|---------|-------|
-| Settings | `~/Library/Application Support/FloppyBootCD/` | `%APPDATA%\FloppyBootCD\` | `~/.config/FloppyBootCD/` |
+| Settings, window geometry, recent dirs (via `QSettings`) | `~/Library/Preferences/com.pacnpal.FloppyBootCD.plist` | Registry: `HKCU\Software\pacnpal\FloppyBootCD` | `~/.config/pacnpal/FloppyBootCD.conf` |
 | Cached syslinux | `~/Library/Caches/FloppyBootCD/syslinux/<ver>/` | `%LOCALAPPDATA%\FloppyBootCD\syslinux\<ver>\` | `~/.cache/FloppyBootCD/syslinux/<ver>/` |
-| Window geometry & preferences | Native (plist / registry / config file) via QSettings | | |
 
 To wipe the syslinux cache: **Tools → Clear Syslinux Cache**.
 
@@ -747,7 +856,11 @@ python -m floppybootcd
 
 **"xorriso not found"**
 Install xorriso (see the [system dependency](#system-dependency-xorriso)
-section). If it's installed in a non-standard location, point to it via
+section) and make sure the directory containing the binary is on your
+`PATH`. The build searches `PATH` plus a handful of common install
+locations (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`,
+`C:\Program Files\xorriso\`, `C:\msys64\usr\bin\`, etc.). If it's
+installed somewhere else entirely, point to it via
 **Tools → Set xorriso Path...** — the path is remembered between runs.
 
 **"Failed to load libcom32.c32" at boot**
