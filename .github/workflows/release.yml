@@ -307,6 +307,139 @@ jobs:
           cd dist
           tar -czf "floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.tar.gz" floppybootcd
 
+      # Build AppImage, .deb, and .rpm packages from the PyInstaller bundle.
+      # The PyInstaller dir (dist/floppybootcd/) is installed under
+      # /usr/lib/floppybootcd/ with a /usr/bin/floppybootcd wrapper, an
+      # XDG .desktop entry, and the floppy-disk PNG icon. fpm wraps that
+      # tree into .deb and .rpm; appimagetool wraps an AppDir variant.
+      - name: Build Linux packages (AppImage, .deb, .rpm)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER='${{ steps.version.outputs.version }}'
+          LABEL='${{ matrix.label }}'
+          case "$LABEL" in
+            linux-x86_64) DEB_ARCH=amd64 ; RPM_ARCH=x86_64  ; APPIMG_ARCH=x86_64  ;;
+            linux-arm64)  DEB_ARCH=arm64 ; RPM_ARCH=aarch64 ; APPIMG_ARCH=aarch64 ;;
+            *) echo "Unknown linux label: $LABEL" ; exit 1 ;;
+          esac
+
+          # Stage tree: /usr/lib/floppybootcd/<bundle>, /usr/bin wrapper,
+          # XDG .desktop, icon. Used by .deb/.rpm as-is; copied into the
+          # AppDir for AppImage.
+          STAGE=pkgroot
+          rm -rf "$STAGE" AppDir
+          mkdir -p \
+            "$STAGE/usr/lib/floppybootcd" \
+            "$STAGE/usr/bin" \
+            "$STAGE/usr/share/applications" \
+            "$STAGE/usr/share/icons/hicolor/512x512/apps" \
+            "$STAGE/usr/share/doc/floppybootcd"
+          cp -R dist/floppybootcd/. "$STAGE/usr/lib/floppybootcd/"
+
+          # /usr/bin wrapper for .deb/.rpm (absolute path is correct
+          # post-install). NOT used by the AppImage — see AppRun below.
+          cat > "$STAGE/usr/bin/floppybootcd" <<'EOF'
+          #!/bin/sh
+          exec /usr/lib/floppybootcd/floppybootcd "$@"
+          EOF
+          chmod +x "$STAGE/usr/bin/floppybootcd"
+
+          cat > "$STAGE/usr/share/applications/floppybootcd.desktop" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=FloppyBootCD
+          GenericName=Bootable CD Builder
+          Comment=Build bootable CDs from collections of floppy disk images
+          Exec=floppybootcd %F
+          Icon=floppybootcd
+          Categories=Utility;System;FileTools;
+          Terminal=false
+          StartupNotify=true
+          EOF
+
+          cp floppybootcd/resources/icon.png \
+             "$STAGE/usr/share/icons/hicolor/512x512/apps/floppybootcd.png"
+          cp LICENSE LICENSE-xorriso THIRD_PARTY_NOTICES.md \
+             "$STAGE/usr/share/doc/floppybootcd/"
+
+          # ── .deb (Debian / Ubuntu / Raspberry Pi OS) ──────────────────
+          # ── .rpm (Fedora / RHEL / openSUSE) ───────────────────────────
+          # PySide6 wheels bundle Qt itself, but Qt links to system libs
+          # for X11, EGL, DBus, fontconfig. Declare those so apt/dnf
+          # surface a clear error if a stripped-down install lacks them.
+          sudo gem install --no-document fpm
+
+          fpm -s dir -t deb -n floppybootcd -v "$VER" -a "$DEB_ARCH" \
+              --description "Build bootable CDs from collections of floppy disk images" \
+              --url "https://github.com/pacnpal/floppybootcd" \
+              --maintainer "pacnpal <noreply@github.com>" \
+              --license "MIT" \
+              --vendor "pacnpal" \
+              --category "utils" \
+              --deb-no-default-config-files \
+              -d "libegl1" -d "libxkbcommon0" -d "libxkbcommon-x11-0" \
+              -d "libxcb-cursor0" -d "libxcb-icccm4" -d "libxcb-image0" \
+              -d "libxcb-keysyms1" -d "libxcb-randr0" -d "libxcb-render-util0" \
+              -d "libxcb-shape0" -d "libxcb-sync1" -d "libxcb-xfixes0" \
+              -d "libxcb-xinerama0" -d "libxcb-xkb1" \
+              -d "libdbus-1-3" -d "libfontconfig1" -d "libxrender1" \
+              -d "libsm6" -d "libice6" \
+              -p "dist/floppybootcd-${VER}-${LABEL}.deb" \
+              -C "$STAGE" usr
+
+          fpm -s dir -t rpm -n floppybootcd -v "$VER" -a "$RPM_ARCH" \
+              --description "Build bootable CDs from collections of floppy disk images" \
+              --url "https://github.com/pacnpal/floppybootcd" \
+              --maintainer "pacnpal <noreply@github.com>" \
+              --license "MIT" \
+              --vendor "pacnpal" \
+              --category "Applications/System" \
+              --rpm-summary "Build bootable CDs from floppy disk images" \
+              -d "libxkbcommon" -d "libxkbcommon-x11" \
+              -d "xcb-util-cursor" -d "xcb-util-image" -d "xcb-util-keysyms" \
+              -d "xcb-util-renderutil" -d "xcb-util-wm" -d "libxcb" \
+              -d "dbus-libs" -d "fontconfig" -d "libXrender" \
+              -d "libSM" -d "libICE" -d "mesa-libEGL" \
+              -p "dist/floppybootcd-${VER}-${LABEL}.rpm" \
+              -C "$STAGE" usr
+
+          # ── AppImage (universal Linux) ────────────────────────────────
+          # Same staged tree, plus an AppRun shim that resolves the
+          # bundled binary via $APPDIR (the mount point at runtime), not
+          # an absolute path, so the AppImage is relocatable.
+          APPDIR=AppDir
+          mkdir -p "$APPDIR"
+          cp -R "$STAGE/usr" "$APPDIR/usr"
+          # appimagetool requires .desktop and icon at the AppDir root.
+          cp "$STAGE/usr/share/applications/floppybootcd.desktop" \
+             "$APPDIR/floppybootcd.desktop"
+          cp floppybootcd/resources/icon.png "$APPDIR/floppybootcd.png"
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/lib/floppybootcd/floppybootcd" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+          # appimagetool: --appimage-extract-and-run so the build host
+          # doesn't need FUSE2. ARCH= tells appimagetool what arch tag to
+          # bake into the output runtime.
+          wget -q \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMG_ARCH}.AppImage" \
+            -O appimagetool
+          chmod +x appimagetool
+          ARCH="$APPIMG_ARCH" ./appimagetool \
+            --appimage-extract-and-run \
+            --no-appstream \
+            "$APPDIR" \
+            "dist/floppybootcd-${VER}-${LABEL}.AppImage"
+
+          # Sanity: list the four artifacts so a missing one is obvious
+          # in the workflow log, not on the release page.
+          ls -la dist/floppybootcd-${VER}-${LABEL}.*
+
       - name: Package macOS build
         if: runner.os == 'macOS'
         shell: bash
@@ -336,6 +469,22 @@ jobs:
         with:
           name: floppybootcd-${{ matrix.label }}
           path: dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.${{ matrix.artifact_ext }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # Linux-only: separate upload for the AppImage / .deb / .rpm
+      # produced by the packaging step above. Kept distinct from the
+      # main tar.gz upload so a Linux packaging failure doesn't also
+      # kill the tar.gz artifact upload.
+      - name: Upload Linux package artifacts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: floppybootcd-${{ matrix.label }}-packages
+          path: |
+            dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.AppImage
+            dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.deb
+            dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.rpm
           if-no-files-found: error
           retention-days: 14
 

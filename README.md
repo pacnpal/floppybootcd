@@ -61,8 +61,22 @@ platform. Pick the one that matches your machine:
 | macOS (Intel) | `floppybootcd-<version>-macos-x86_64.zip` | yes (native x86_64) |
 | Windows (x86_64) | `floppybootcd-<version>-windows-x86_64.zip` | yes (native x86_64) |
 | Windows (ARM64) | `floppybootcd-<version>-windows-arm64.zip` | yes (x86_64, runs under Win11 ARM x64 emulation) |
-| Linux (x86_64) | `floppybootcd-<version>-linux-x86_64.tar.gz` | yes (native x86_64) |
-| Linux (ARM64 / Raspberry Pi 3-5) | `floppybootcd-<version>-linux-arm64.tar.gz` | yes (native aarch64) |
+| Linux AppImage (x86_64) | `floppybootcd-<version>-linux-x86_64.AppImage` | yes (native x86_64) |
+| Linux AppImage (ARM64) | `floppybootcd-<version>-linux-arm64.AppImage` | yes (native aarch64) |
+| Debian / Ubuntu / Pi OS (x86_64) | `floppybootcd-<version>-linux-x86_64.deb` | yes (native x86_64) |
+| Debian / Ubuntu / Pi OS (ARM64) | `floppybootcd-<version>-linux-arm64.deb` | yes (native aarch64) |
+| Fedora / RHEL / openSUSE (x86_64) | `floppybootcd-<version>-linux-x86_64.rpm` | yes (native x86_64) |
+| Fedora / RHEL / openSUSE (aarch64) | `floppybootcd-<version>-linux-arm64.rpm` | yes (native aarch64) |
+| Linux tarball (x86_64) | `floppybootcd-<version>-linux-x86_64.tar.gz` | yes (native x86_64) |
+| Linux tarball (ARM64 / Raspberry Pi 3-5) | `floppybootcd-<version>-linux-arm64.tar.gz` | yes (native aarch64) |
+
+Linux ships in four flavors per arch: an **AppImage** (single-file
+portable, works on any distro at or above the glibc baseline below),
+a **`.deb`** for the Debian/Ubuntu/Raspberry Pi OS family, a **`.rpm`**
+for the Fedora/RHEL/openSUSE family, and a raw **`.tar.gz`** of the
+PyInstaller bundle for read-only filesystems or distros without
+package managers. All four contain the same binary — pick whichever
+matches your install habits.
 
 Since v1.1.0, every prebuilt bundle ships with `xorriso` already
 inside, so you don't need to install it separately. The Windows ARM64
@@ -140,25 +154,36 @@ The first time you launch it, **Windows SmartScreen** may show a
 
 #### Linux (including Raspberry Pi)
 
+Linux ships in four flavors. Pick whichever matches your distro and
+arch — they all contain the same binary.
+
 ```bash
-# 1. Extract. Pick the file that matches your CPU:
-#      x86_64:   floppybootcd-<version>-linux-x86_64.tar.gz
-#      ARM64:    floppybootcd-<version>-linux-arm64.tar.gz
-#                (Raspberry Pi 3 / 4 / 5 / Zero 2 W on a 64-bit OS,
-#                 plus AWS Graviton, Ampere, and other aarch64 boxes)
+# A. AppImage — universal, no install, just chmod and run.
+#    Works on any distro at or above the glibc baseline below.
+chmod +x floppybootcd-<version>-linux-<arch>.AppImage
+./floppybootcd-<version>-linux-<arch>.AppImage
+
+# B. .deb — Debian, Ubuntu, Raspberry Pi OS, Pop!_OS, Mint, ...
+sudo apt install ./floppybootcd-<version>-linux-<arch>.deb
+floppybootcd
+
+# C. .rpm — Fedora, RHEL, Rocky, Alma, openSUSE, ...
+sudo dnf install ./floppybootcd-<version>-linux-<arch>.rpm
+floppybootcd
+
+# D. Raw tarball — any distro, no package manager involvement.
 tar -xzf floppybootcd-<version>-linux-<arch>.tar.gz
 cd floppybootcd
-
-# 2. Run it.
 ./floppybootcd
-
-# 3. (Optional) install xorriso. The Linux prebuilt already ships one
-#    plus its libisoburn / libisofs / libburn runtime libraries. Install
-#    a system copy only if you want to override the bundled version:
-sudo apt install xorriso        # Debian / Ubuntu / Raspberry Pi OS
-sudo dnf install xorriso        # Fedora / RHEL
-sudo pacman -S libisoburn       # Arch
 ```
+
+Arch values: `x86_64` (Intel/AMD) or `arm64` (Raspberry Pi 3/4/5/Zero
+2 W on a 64-bit OS, AWS Graviton, Ampere Altra, etc.).
+
+xorriso is bundled in all four formats; you only need to install a
+system copy if you want to override the bundled version (`sudo apt
+install xorriso`, `sudo dnf install xorriso`, `sudo pacman -S
+libisoburn`).
 
 The Linux bundle ships with the Qt runtime, platform plugins, and
 xorriso it needs, so no extra system installs are required on a

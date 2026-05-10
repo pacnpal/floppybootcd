@@ -420,7 +420,19 @@ open /Applications/floppybootcd.app</code></pre>
       <pre><code>Expand-Archive .\floppybootcd-*-windows-x86_64.zip -DestinationPath C:\Tools\
 C:\Tools\floppybootcd\floppybootcd.exe</code></pre>
 
-      <h3>Linux (incl. Raspberry Pi 3/4/5)</h3>
+      <h3>Linux &mdash; AppImage (universal)</h3>
+      <pre><code>chmod +x floppybootcd-*-linux-x86_64.AppImage
+./floppybootcd-*-linux-x86_64.AppImage</code></pre>
+
+      <h3>Linux &mdash; Debian / Ubuntu / Raspberry Pi OS</h3>
+      <pre><code>sudo apt install ./floppybootcd-*-linux-x86_64.deb
+floppybootcd</code></pre>
+
+      <h3>Linux &mdash; Fedora / RHEL / openSUSE</h3>
+      <pre><code>sudo dnf install ./floppybootcd-*-linux-x86_64.rpm
+floppybootcd</code></pre>
+
+      <h3>Linux &mdash; raw tarball (any distro)</h3>
       <pre><code>tar xzf floppybootcd-*-linux-x86_64.tar.gz
 cd floppybootcd
 ./floppybootcd</code></pre>
@@ -499,13 +511,24 @@ floppybootcd</code></pre>
   // Platform labels include the minimum supported OS version so the
   // download table doubles as a compatibility hint. Versions match the
   // Supported Operating Systems table further down the page.
+  // Linux ships four formats per arch:
+  //   AppImage  — universal portable (any glibc >= matrix baseline)
+  //   .deb      — Debian / Ubuntu / Raspberry Pi OS
+  //   .rpm      — Fedora / RHEL / openSUSE
+  //   .tar.gz   — raw bundle (advanced users / read-only filesystems)
   const PLATFORMS = [
-    { label: "macOS 13+",  arch: "Apple Silicon",       match: /-macos-arm64\.zip$/ },
-    { label: "macOS 13+",  arch: "Intel",               match: /-macos-x86_64\.zip$/ },
-    { label: "Windows 10", arch: "x86_64",              match: /-windows-x86_64\.zip$/ },
-    { label: "Windows 11", arch: "ARM64",               match: /-windows-arm64\.zip$/ },
-    { label: "Linux",      arch: "x86_64",              match: /-linux-x86_64\.tar\.gz$/ },
-    { label: "Linux",      arch: "ARM64 / Raspberry Pi", match: /-linux-arm64\.tar\.gz$/ },
+    { label: "macOS 13+",       arch: "Apple Silicon",       match: /-macos-arm64\.zip$/ },
+    { label: "macOS 13+",       arch: "Intel",               match: /-macos-x86_64\.zip$/ },
+    { label: "Windows 10",      arch: "x86_64",              match: /-windows-x86_64\.zip$/ },
+    { label: "Windows 11",      arch: "ARM64",               match: /-windows-arm64\.zip$/ },
+    { label: "Linux AppImage",  arch: "x86_64",              match: /-linux-x86_64\.AppImage$/ },
+    { label: "Linux AppImage",  arch: "ARM64 / Raspberry Pi", match: /-linux-arm64\.AppImage$/ },
+    { label: "Debian / Ubuntu", arch: "x86_64 (amd64)",      match: /-linux-x86_64\.deb$/ },
+    { label: "Debian / Ubuntu", arch: "ARM64 / Raspberry Pi", match: /-linux-arm64\.deb$/ },
+    { label: "Fedora / RHEL",   arch: "x86_64",              match: /-linux-x86_64\.rpm$/ },
+    { label: "Fedora / RHEL",   arch: "ARM64 (aarch64)",     match: /-linux-arm64\.rpm$/ },
+    { label: "Linux tarball",   arch: "x86_64",              match: /-linux-x86_64\.tar\.gz$/ },
+    { label: "Linux tarball",   arch: "ARM64 / Raspberry Pi", match: /-linux-arm64\.tar\.gz$/ },
   ];
 
   function fmtBytes(n) {
