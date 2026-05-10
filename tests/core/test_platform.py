@@ -29,7 +29,7 @@ class TestPlatformDetection:
 class TestAppDataDir:
     def test_macos(self, monkeypatch, tmp_path):
         monkeypatch.setattr(platform_mod.sys, "platform", "darwin")
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         d = app_data_dir("Test")
         assert d == tmp_path / "Library" / "Application Support" / "Test"
         assert d.is_dir()
@@ -44,7 +44,7 @@ class TestAppDataDir:
     def test_windows_fallback_when_appdata_unset(self, monkeypatch, tmp_path):
         monkeypatch.setattr(platform_mod.sys, "platform", "win32")
         monkeypatch.delenv("APPDATA", raising=False)
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         d = app_data_dir("Test")
         assert d == tmp_path / "AppData" / "Roaming" / "Test"
 
@@ -57,7 +57,7 @@ class TestAppDataDir:
     def test_linux_fallback_when_xdg_unset(self, monkeypatch, tmp_path):
         monkeypatch.setattr(platform_mod.sys, "platform", "linux")
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         d = app_data_dir("Test")
         assert d == tmp_path / ".local" / "share" / "Test"
 
@@ -71,7 +71,7 @@ class TestAppConfigDir:
 
     def test_macos_matches_app_data_dir(self, monkeypatch, tmp_path):
         monkeypatch.setattr(platform_mod.sys, "platform", "darwin")
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         assert app_config_dir("Test") == app_data_dir("Test")
 
     def test_windows_matches_app_data_dir(self, monkeypatch, tmp_path):
@@ -83,7 +83,7 @@ class TestAppConfigDir:
 class TestCacheDir:
     def test_macos(self, monkeypatch, tmp_path):
         monkeypatch.setattr(platform_mod.sys, "platform", "darwin")
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         d = cache_dir("Test")
         assert d == tmp_path / "Library" / "Caches" / "Test"
 
@@ -102,6 +102,6 @@ class TestCacheDir:
     def test_linux_fallback(self, monkeypatch, tmp_path):
         monkeypatch.setattr(platform_mod.sys, "platform", "linux")
         monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         d = cache_dir("Test")
         assert d == tmp_path / ".cache" / "Test"
