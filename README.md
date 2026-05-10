@@ -238,7 +238,8 @@ uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 
 ### Where uv puts everything
 
-When you run `uv tool install floppybootcd`, two things land on disk:
+When you run `uv tool install git+https://github.com/pacnpal/floppybootcd`,
+two things land on disk:
 
 | What | macOS / Linux | Windows |
 |------|---------------|---------|
@@ -579,8 +580,7 @@ Each image has its own boot menu label (what shows up at boot time). The
 filename is the default label. To change it:
 
 - **Double-click** the entry, or
-- Select it and click **Edit...**, or
-- Select it and press Enter
+- Select it and click **Edit...**
 
 The label can include a hotkey marker: in the menu, the character after a
 `^` becomes a keyboard shortcut and is highlighted. For example,
@@ -602,7 +602,7 @@ The **Project** panel at the top controls disc-wide settings:
 |---------|--------------|
 | **Disc title** | Shows up as the ISO 9660 volume label and as the menu title at boot |
 | **Bootloader** | Which bootloader to use. ISOLINUX (BIOS) is the default; plugins can register more (e.g. GRUB4DOS) |
-| **Menu style** | "Text menu" uses `menu.c32`. "Graphical menu" uses `vesamenu.c32` and supports a background image |
+| **Menu style** | "Text menu" uses `menu.c32`. "Graphical menu" uses `vesamenu.c32` (a `background_image` path can be set in the saved `.fbcd` file) |
 | **Boot timeout** | Seconds to wait before auto-booting the default entry. Set to 0 ("No auto-boot") to wait forever |
 
 ### Saving and loading projects
@@ -694,9 +694,8 @@ FloppyBootCD respects each OS's conventions:
 
 | Data | macOS | Windows | Linux |
 |------|-------|---------|-------|
-| Settings | `~/Library/Application Support/FloppyBootCD/` | `%APPDATA%\FloppyBootCD\` | `~/.config/FloppyBootCD/` |
+| Settings, window geometry, recent dirs (via `QSettings`) | `~/Library/Preferences/com.pacnpal.FloppyBootCD.plist` | Registry: `HKCU\Software\pacnpal\FloppyBootCD` | `~/.config/pacnpal/FloppyBootCD.conf` |
 | Cached syslinux | `~/Library/Caches/FloppyBootCD/syslinux/<ver>/` | `%LOCALAPPDATA%\FloppyBootCD\syslinux\<ver>\` | `~/.cache/FloppyBootCD/syslinux/<ver>/` |
-| Window geometry & preferences | Native (plist / registry / config file) via QSettings | | |
 
 To wipe the syslinux cache: **Tools → Clear Syslinux Cache**.
 
@@ -857,8 +856,10 @@ python -m floppybootcd
 
 **"xorriso not found"**
 Install xorriso (see the [system dependency](#system-dependency-xorriso)
-section). Or if it's installed in a non-standard location, point to it via
-the **xorriso path** field in settings.
+section) and make sure the directory containing the binary is on your
+`PATH`. The build searches `PATH` plus a handful of common install
+locations (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`,
+`C:\Program Files\xorriso\`, `C:\msys64\usr\bin\`, etc.).
 
 **"Failed to load libcom32.c32" at boot**
 The `lib*.c32` modules didn't end up on the disc. Run **Tools → Clear
