@@ -493,15 +493,14 @@ class MainWindow(QMainWindow):
 
     def _refresh_capacity_label(self) -> None:
         """Update the status bar's running total / CD capacity indicator."""
-        used = image_prep.total_payload_size(
-            img.path for img in self.project.images
+        used = image_prep.total_disc_payload(
+            (img.path for img in self.project.images),
+            vesa_background=(
+                self.project.background_image
+                if self.project.menu_style == "vesa"
+                else None
+            ),
         )
-        # Match validate_project: the VESA background image is also
-        # staged onto the disc, so it counts against the budget.
-        if self.project.menu_style == "vesa" and self.project.background_image:
-            bg = Path(self.project.background_image)
-            if bg.is_file():
-                used += bg.stat().st_size
         usable = image_prep.CD_USABLE_BYTES
         used_mib = used / (1024 * 1024)
         usable_mib = usable / (1024 * 1024)

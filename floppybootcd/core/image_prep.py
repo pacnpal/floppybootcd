@@ -101,11 +101,12 @@ def verify_imz_readable(path: str | Path) -> tuple[str | None, int]:
     - archive contains a floppy-image member
     - inner member is not flagged as encrypted (general-purpose bit 0)
     - inner member is non-empty
-    - inner member is openable and at least 1 byte is readable (this
-      surfaces ``NotImplementedError`` for unsupported compression
-      methods and most ``OSError`` failures; it does **not** verify
-      the full CRC, which zipfile only checks once a member is read
-      end-to-end)
+    - inner member is openable and decompresses cleanly all the way
+      to EOF — surfaces ``NotImplementedError`` for unsupported
+      compression methods, ``zipfile.BadZipFile`` for CRC mismatches,
+      and ``OSError`` for truncated streams. The decompressed bytes
+      are discarded chunk-by-chunk so memory use stays flat even on
+      multi-MiB floppy images.
     """
     p = Path(path)
     try:
@@ -124,12 +125,15 @@ def verify_imz_readable(path: str | Path) -> tuple[str | None, int]:
             # empty staged .ima.
             if member.file_size == 0:
                 return ("inner image is empty (0 bytes).", 0)
-            # Attempt a small read to surface unsupported compression
-            # methods (NotImplementedError) now rather than during the
-            # build. Note: this does not validate the inner member's
-            # CRC — zipfile only checks that on a full read.
+            # Stream the inner member end-to-end. zipfile only
+            # validates the CRC on a full read, so this catches CRC
+            # mismatches and truncated archives now rather than
+            # half-way through the build. Bytes are discarded chunk
+            # by chunk so memory use stays flat even on multi-MiB
+            # floppy images.
             with zf.open(member) as fh:
-                fh.read(1)
+                while fh.read(64 * 1024):
+                    pass
             return (None, member.file_size)
     except ValueError as e:
         # _open_imz / _pick_inner_member raise with a "{name}: ..."
@@ -196,6 +200,24 @@ def total_payload_size(paths) -> int:
     size on disk. Missing or unreadable files contribute 0.
     """
     return sum(probe_uncompressed_size(p) for p in paths)
+
+
+def total_disc_payload(image_paths, *, vesa_background: str | Path | None = None) -> int:
+    """Sum every byte that will land on the burned disc.
+
+    Wraps :func:`total_payload_size` for the floppy images and adds
+    the staged VESA background image when *vesa_background* is set
+    (callers pass ``None`` in text-menu mode so the background is
+    correctly excluded). Centralizes the capacity math so the
+    pre-build validator and the UI status-bar indicator can't drift
+    apart.
+    """
+    total = total_payload_size(image_paths)
+    if vesa_background:
+        bg = Path(vesa_background)
+        if bg.is_file():
+            total += bg.stat().st_size
+    return total
 
 
 @functools.lru_cache(maxsize=512)

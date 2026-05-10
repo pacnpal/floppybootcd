@@ -197,3 +197,83 @@ class TestCdCapacityConstants:
 
     def test_usable_is_positive_and_below_total(self):
         assert 0 < image_prep.CD_USABLE_BYTES < image_prep.CD_R_CAPACITY_BYTES
+
+
+class TestTotalDiscPayload:
+    """The single source of truth for the disc-budget calculation."""
+
+    def test_no_background_matches_total_payload_size(self, tmp_path):
+        a = tmp_path / "a.img"
+        b = tmp_path / "b.img"
+        a.write_bytes(b"\0" * 1024)
+        b.write_bytes(b"\0" * 4096)
+        # vesa_background=None must yield the floppy-only sum.
+        assert image_prep.total_disc_payload([a, b]) == 5120
+
+    def test_vesa_background_added_to_total(self, tmp_path):
+        a = tmp_path / "a.img"
+        a.write_bytes(b"\0" * 1024)
+        bg = tmp_path / "bg.png"
+        bg.write_bytes(b"\0" * 2048)
+        assert image_prep.total_disc_payload(
+            [a], vesa_background=bg
+        ) == 1024 + 2048
+
+    def test_missing_background_silently_skipped(self, tmp_path):
+        a = tmp_path / "a.img"
+        a.write_bytes(b"\0" * 1024)
+        assert image_prep.total_disc_payload(
+            [a], vesa_background=tmp_path / "no-such.png"
+        ) == 1024
+
+    def test_imz_inner_size_counts_in_disc_payload(self, tmp_path):
+        src = _make_imz(tmp_path / "boot.imz")
+        assert image_prep.total_disc_payload([src]) == len(INNER_BYTES)
+
+
+class TestVerifyImzReadable:
+    """End-to-end inner-stream validation, not just the central directory."""
+
+    def test_valid_imz_returns_inner_size(self, tmp_path):
+        src = _make_imz(tmp_path / "ok.imz")
+        err, size = image_prep.verify_imz_readable(src)
+        assert err is None
+        assert size == len(INNER_BYTES)
+
+    def test_truncated_imz_detected(self, tmp_path):
+        # Build a valid .imz, then chop trailing bytes off the
+        # compressed stream so a full decompression fails. We keep
+        # the central directory + EOCD intact (last ~80 bytes) so
+        # zipfile's structural check at open time still passes.
+        src = tmp_path / "truncated.imz"
+        with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inner.ima", INNER_BYTES)
+        raw = src.read_bytes()
+        # Drop bytes from the middle of the compressed payload (after
+        # the local file header signature, before the central
+        # directory) by truncating just before the central directory.
+        cdh = raw.index(b"PK\x01\x02")
+        truncated = raw[: cdh - 16] + raw[cdh:]  # remove 16 payload bytes
+        src.write_bytes(truncated)
+        err, size = image_prep.verify_imz_readable(src)
+        assert err is not None
+        assert size == 0
+
+    def test_filename_prefix_stripped_from_messages(self, tmp_path):
+        src = tmp_path / "broken.imz"
+        src.write_bytes(b"this is not a zip")
+        err, size = image_prep.verify_imz_readable(src)
+        assert err is not None
+        # The message must NOT start with "broken.imz: " — callers add
+        # their own context.
+        assert not err.startswith("broken.imz")
+        assert size == 0
+
+    def test_empty_inner_member_rejected(self, tmp_path):
+        src = tmp_path / "empty_inner.imz"
+        with zipfile.ZipFile(src, "w") as zf:
+            zf.writestr("inner.ima", b"")
+        err, size = image_prep.verify_imz_readable(src)
+        assert err is not None
+        assert "empty" in err.lower()
+        assert size == 0
