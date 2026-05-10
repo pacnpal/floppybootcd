@@ -60,8 +60,13 @@ def walk_floppy_images(path: str | Path) -> list[str]:
     - If *path* is a file with a recognized extension, returns it as a
       single-element list.
     - If *path* is a directory, walks it (up to ``_DROP_RECURSION_LIMIT``
-      levels) and returns every floppy image inside, sorted for
-      deterministic add-order.
+      levels) and returns every floppy image inside in a deterministic
+      depth-first order: each directory's entries are sorted by name
+      and folders descended into before moving to the next sibling.
+      Order is stable across runs for a given filesystem layout but is
+      *not* a global lexicographic sort across nested folders — files
+      group by their containing directory, which is what users expect
+      when re-opening a previously-built collection.
     - Otherwise returns an empty list.
 
     Skips hidden files (``.foo``), dot-directories, and macOS

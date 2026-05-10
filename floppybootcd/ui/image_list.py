@@ -120,8 +120,14 @@ class ImageListWidget(QListWidget):
                 return
             e.ignore()
             return
+        # Only emit items_reordered for genuine in-widget moves —
+        # falling through to super() for an external non-accepted
+        # drop (a .txt file, say) used to fire items_reordered too,
+        # which marked the project dirty even though nothing changed.
+        was_internal = e.source() is self
         super().dropEvent(e)
-        self.items_reordered.emit()
+        if was_internal:
+            self.items_reordered.emit()
 
     # ── Convenience ───────────────────────────────────────────────────────────
 

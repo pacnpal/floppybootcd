@@ -148,6 +148,40 @@ class TestWalkFloppyImages:
         names = [Path(p).name for p in found]
         assert names == sorted(names)
 
+    def test_recursion_depth_limit_truncates(self, tmp_path):
+        """Folders deeper than _DROP_RECURSION_LIMIT are not descended
+        into — a wrong-folder drop on a deep tree (e.g. ~/) doesn't
+        spend minutes walking the entire filesystem."""
+        # One image at every depth from 0 up to limit + 3.
+        limit = image_prep._DROP_RECURSION_LIMIT
+        cur = tmp_path
+        for d in range(limit + 4):
+            (cur / f"at-depth-{d}.img").write_bytes(b"")
+            sub = cur / f"d{d}"
+            sub.mkdir()
+            cur = sub
+        # The leaf gets one more file too, so we have a file at
+        # depth = limit + 4 — definitively past the cap.
+        (cur / "way-too-deep.img").write_bytes(b"")
+
+        found = image_prep.walk_floppy_images(tmp_path)
+        depths_found = sorted({int(Path(p).name.split("-")[2].split(".")[0])
+                               for p in found if Path(p).name.startswith("at-depth-")})
+        # Everything at depth 0..limit must be in the result; anything
+        # past the cap must NOT be.
+        assert depths_found == list(range(limit + 1))
+        assert not any("way-too-deep" in p for p in found)
+
+    def test_file_cap_truncates(self, tmp_path, monkeypatch):
+        """A drop can pull at most _DROP_FILE_LIMIT files in. Lower the
+        cap so the test stays fast; the real cap (1024) lives in the
+        module constant."""
+        monkeypatch.setattr(image_prep, "_DROP_FILE_LIMIT", 5)
+        for i in range(20):
+            (tmp_path / f"f{i:02d}.img").write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        assert len(found) == 5
+
 
 # ── Test fixtures ───────────────────────────────────────────────────────────
 

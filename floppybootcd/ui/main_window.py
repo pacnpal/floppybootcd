@@ -347,8 +347,10 @@ class MainWindow(QMainWindow):
         self._reload_from_project()
 
     def _open_project(self) -> None:
-        if not self._maybe_save():
-            return
+        # The unsaved-changes prompt lives inside open_project_path()
+        # so the Open menu, drag-and-drop, OS file-association, and CLI
+        # paths share one prompt. Calling _maybe_save() here too would
+        # double-prompt on dirty projects.
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", str(Path.home()),
             "FloppyBootCD Project (*.fbcd);;All files (*)",
@@ -457,6 +459,13 @@ class MainWindow(QMainWindow):
             self.project.images.append(img)
             self.list_widget.add_image(img)
         self.project.ensure_one_default()
+
+    def add_paths(self, paths: list[str]) -> None:
+        """Public counterpart to :meth:`_add_paths`. Lets out-of-module
+        callers (the QFileOpenEvent dispatcher in ``app.py``, future
+        plugin entry points) feed floppy-image paths in without
+        reaching across the underscore boundary."""
+        self._add_paths(paths)
         self._refresh_default_marker()
         self._refresh_capacity_label()
         self._mark_dirty()

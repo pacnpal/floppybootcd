@@ -62,7 +62,7 @@ class FloppyBootCDApplication(QApplication):
             return
         found = walk_floppy_images(p)
         if found:
-            win._add_paths(found)
+            win.add_paths(found)
 
     def event(self, ev: QEvent) -> bool:  # type: ignore[override]
         if ev.type() == QEvent.Type.FileOpen and isinstance(ev, QFileOpenEvent):
@@ -126,10 +126,13 @@ def main() -> int:
     # CLI invocation paths: if anything after argv[0] looks like a
     # .fbcd or a floppy image / folder, open it. Covers Windows file
     # double-click (which spawns floppybootcd.exe <path>) and Linux
-    # xdg-open (likewise).
+    # xdg-open (likewise). Guarding against the empty string matters
+    # because Path("").exists() returns True (it resolves to the
+    # current working directory), which would have us recursively
+    # scan CWD for floppies on any `floppybootcd ""` invocation.
     for arg in sys.argv[1:]:
-        if arg.startswith("-"):
-            continue  # respect Qt's own flags
+        if not arg or arg.startswith("-"):
+            continue  # skip empty / Qt flag args
         if Path(arg).exists():
             app._dispatch(arg)
 

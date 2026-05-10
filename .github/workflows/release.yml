@@ -519,12 +519,16 @@ jobs:
           fi
           # Windows: surface the .fbcd registration helpers at the top of
           # the zip so users see them without digging into _internal/.
-          # Double-clicking register-fbcd-windows.reg associates .fbcd
-          # files with this app for the current user; unregister-fbcd-windows.reg
+          # Double-clicking register-fbcd-windows.bat associates .fbcd
+          # files with this app for the current user; unregister-fbcd-windows.bat
           # backs it out. Per-user (HKCU) keeps the elevation prompt away.
+          # .bat (not .reg) because .reg files store strings as REG_SZ
+          # which doesn't expand %LOCALAPPDATA% / %~dp0 at runtime;
+          # reg add /t REG_EXPAND_SZ does, and the .bat resolves its
+          # own install dir via %~dp0 so the path is always right.
           if [ "${{ runner.os }}" = "Windows" ] && [ -d "dist/floppybootcd" ]; then
-            cp floppybootcd/resources/register-fbcd-windows.reg dist/floppybootcd/ || true
-            cp floppybootcd/resources/unregister-fbcd-windows.reg dist/floppybootcd/ || true
+            cp floppybootcd/resources/register-fbcd-windows.bat dist/floppybootcd/ || true
+            cp floppybootcd/resources/unregister-fbcd-windows.bat dist/floppybootcd/ || true
           fi
 
       - name: Package Linux build

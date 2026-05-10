@@ -963,20 +963,29 @@ sudo update-desktop-database /usr/share/applications
 
 ### Windows (`.zip` bundle)
 
-The zip ships **`register-fbcd-windows.reg`** and
-**`unregister-fbcd-windows.reg`** at the top level alongside
+The zip ships **`register-fbcd-windows.bat`** and
+**`unregister-fbcd-windows.bat`** at the top level alongside
 `floppybootcd.exe`. The first time you set up the app:
 
-1. Extract the zip to `%LOCALAPPDATA%\FloppyBootCD\` (the path the
-   .reg file references). Other paths work too — hand-edit the
-   `(Default)` value in the .reg if you install elsewhere.
-2. Double-click `register-fbcd-windows.reg`, confirm the prompt.
+1. Extract the zip anywhere (`%LOCALAPPDATA%\FloppyBootCD\`,
+   `C:\Tools\floppybootcd\`, a USB stick — wherever).
+2. Double-click `register-fbcd-windows.bat`. It uses `%~dp0` to read
+   its own folder and writes `reg add /t REG_EXPAND_SZ` entries for
+   `.fbcd`, so the registered command points at *whichever* folder
+   you extracted to. No hand-editing required.
 3. `.fbcd` files now show the FloppyBootCD icon and open the app on
    double-click.
 
 Registration is per-user (`HKCU\Software\Classes`) so it doesn't
 require admin elevation and won't conflict with another user on the
-same machine. To revert, double-click `unregister-fbcd-windows.reg`.
+same machine. To revert, double-click `unregister-fbcd-windows.bat`.
+
+Why `.bat` and not a hand-edited `.reg`? `.reg` files write registry
+values as `REG_SZ` by default, and `REG_SZ` doesn't expand
+environment variables (`%LOCALAPPDATA%`, `%~dp0`, etc.) at lookup
+time. Windows would launch the literal path `%LOCALAPPDATA%\…` and
+fail. `reg add /t REG_EXPAND_SZ` writes the correct expandable
+string type.
 
 If you'd rather not touch the registry, dragging a `.fbcd` file onto
 the FloppyBootCD window still works (Qt's drag-and-drop handles it
