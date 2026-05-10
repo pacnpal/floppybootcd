@@ -584,7 +584,7 @@ FloppyBootCD respects each OS's conventions:
 
 | Data | macOS | Windows | Linux |
 |------|-------|---------|-------|
-| Settings, window geometry, recent dirs (via `QSettings`) | `~/Library/Preferences/al.pacnp.FloppyBootCD.plist` | Registry: `HKCU\Software\pacnpal\FloppyBootCD` | `~/.config/pacnpal/FloppyBootCD.conf` |
+| Settings, window geometry, recent dirs (via `QSettings`) | `~/Library/Preferences/com.pacnpal.FloppyBootCD.plist` | Registry: `HKCU\Software\pacnpal\FloppyBootCD` | `~/.config/pacnpal/FloppyBootCD.conf` |
 | Cached syslinux | `~/Library/Caches/FloppyBootCD/syslinux/<ver>/` | `%LOCALAPPDATA%\FloppyBootCD\syslinux\<ver>\` | `~/.cache/FloppyBootCD/syslinux/<ver>/` |
 
 To wipe the syslinux cache: **Tools → Clear Syslinux Cache**.
