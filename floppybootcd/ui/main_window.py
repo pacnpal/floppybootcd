@@ -459,16 +459,18 @@ class MainWindow(QMainWindow):
             self.project.images.append(img)
             self.list_widget.add_image(img)
         self.project.ensure_one_default()
+        self._refresh_default_marker()
+        self._refresh_capacity_label()
+        self._mark_dirty()
 
     def add_paths(self, paths: list[str]) -> None:
         """Public counterpart to :meth:`_add_paths`. Lets out-of-module
         callers (the QFileOpenEvent dispatcher in ``app.py``, future
         plugin entry points) feed floppy-image paths in without
-        reaching across the underscore boundary."""
+        reaching across the underscore boundary. Behavior identical
+        to ``_add_paths``: dedups, sets a default, refreshes the
+        capacity label, marks the project dirty."""
         self._add_paths(paths)
-        self._refresh_default_marker()
-        self._refresh_capacity_label()
-        self._mark_dirty()
 
     def _remove_selected(self) -> None:
         n = self.list_widget.remove_selected()
