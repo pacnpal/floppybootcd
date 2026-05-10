@@ -312,6 +312,91 @@ jobs:
             --exclude-module PySide6.QtUiTools \
             floppybootcd/__main__.py
 
+      # Drop runtime-unused PySide6 and Qt assets that --collect-all
+      # pulls in by default. Each prune target is either compile-time
+      # only (typesystems/, include/, glue/, support/) or locale/UI
+      # content we don't ship (Qt translations for 30+ languages, QML
+      # imports we don't load) or stray plugin dirs that aren't always
+      # caught by --exclude-module (Qt's PySide6 hook can re-add them).
+      # No behavior change — every file removed here is something the
+      # running app never reads.
+      - name: Prune unused Qt and PySide6 resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          before=$(du -sh dist 2>/dev/null | awk '{print $1}' || echo "?")
+          echo "Bundle size before prune: ${before}"
+
+          # Find the PySide6 root (path differs between macOS .app and
+          # plain --windowed dir layouts).
+          for candidate in \
+              dist/floppybootcd.app/Contents/Resources/PySide6 \
+              dist/floppybootcd.app/Contents/MacOS/PySide6 \
+              dist/floppybootcd/_internal/PySide6 \
+              dist/floppybootcd/PySide6; do
+            if [ -d "$candidate" ]; then
+              PYSIDE_ROOT="$candidate"
+              break
+            fi
+          done
+          if [ -z "${PYSIDE_ROOT:-}" ]; then
+            echo "No PySide6 dir found under dist/; skipping prune."
+            ls -la dist/ || true
+            exit 0
+          fi
+          echo "Pruning $PYSIDE_ROOT"
+
+          # PySide6 compile-time / dev-only dirs.
+          for d in typesystems include glue support examples scripts; do
+            if [ -d "$PYSIDE_ROOT/$d" ]; then
+              rm -rf "$PYSIDE_ROOT/$d"
+              echo "  removed PySide6/$d"
+            fi
+          done
+
+          # PySide6 CLI tools the bundled app never invokes
+          # (rcc/uic/designer/lupdate/lrelease/qmllint/deploy/etc.).
+          # Glob-safe: only touch executables under PySide6 root.
+          find "$PYSIDE_ROOT" -maxdepth 2 -type f \
+            \( -name 'pyside6-*' -o -name 'shiboken6' \
+               -o -name 'shiboken6-genpyi' -o -name 'rcc*' \
+               -o -name 'uic*' -o -name 'qmllint*' -o -name 'qmlformat*' \
+               -o -name 'qmltyperegistrar*' -o -name 'qmlimportscanner*' \) \
+            -print -delete 2>/dev/null || true
+
+          # Qt resources inside PySide6/Qt/.
+          QT_ROOT="$PYSIDE_ROOT/Qt"
+          if [ -d "$QT_ROOT" ]; then
+            # Translations: app is English-only.
+            [ -d "$QT_ROOT/translations" ] && rm -rf "$QT_ROOT/translations" \
+              && echo "  removed Qt/translations" || true
+
+            # QML imports: no QtQuick/QtQml usage in the app.
+            [ -d "$QT_ROOT/qml" ] && rm -rf "$QT_ROOT/qml" \
+              && echo "  removed Qt/qml" || true
+
+            # Plugin subdirs for features we don't use. The
+            # --exclude-module flags above should drop most of these,
+            # but PySide6's PyInstaller hook can re-add the plugin
+            # dirs even when the Python module is excluded.
+            if [ -d "$QT_ROOT/plugins" ]; then
+              for p in sqldrivers multimedia mediaservice \
+                       position geoservices texttospeech \
+                       webview networkinformation tls canbus \
+                       sensors sensorgestures gamepads \
+                       designer renderers qmltooling \
+                       scxmldatamodel assetimporters; do
+                if [ -d "$QT_ROOT/plugins/$p" ]; then
+                  rm -rf "$QT_ROOT/plugins/$p"
+                  echo "  removed Qt/plugins/$p"
+                fi
+              done
+            fi
+          fi
+
+          after=$(du -sh dist 2>/dev/null | awk '{print $1}' || echo "?")
+          echo "Bundle size after prune:  ${after}"
+
       - name: Bundle xorriso and license notices into PyInstaller output
         shell: bash
         run: |
