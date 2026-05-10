@@ -52,6 +52,31 @@ class TestStagedFilename:
     def test_raw_unchanged(self, name):
         assert image_prep.staged_filename(name) == name
 
+    def test_spaces_replaced_with_underscores(self):
+        # SYSLINUX APPEND parses on whitespace; a space in the on-disc
+        # filename truncates the path and MEMDISK can't find the image.
+        # See bug report: "Acronis OS Selector SE.img" failed to boot.
+        assert image_prep.staged_filename("Acronis OS Selector SE.img") \
+            == "Acronis_OS_Selector_SE.img"
+
+    def test_imz_spaces_replaced(self):
+        assert image_prep.staged_filename("My Old Boot Disk.imz") \
+            == "My_Old_Boot_Disk.ima"
+
+    @pytest.mark.parametrize("name,expected", [
+        ("a#b.img", "a_b.img"),       # # is a SYSLINUX comment marker
+        ("a;b.img", "a_b.img"),       # ; / , can confuse some loaders
+        ("a,b.img", "a_b.img"),
+        ("a\tb.img", "a_b.img"),      # tabs are whitespace too
+        ("a   b.img", "a_b.img"),     # collapse runs
+        ("__a__b__.img", "a_b.img"),  # trim/collapse underscores
+    ])
+    def test_unsafe_chars_sanitized(self, name, expected):
+        assert image_prep.staged_filename(name) == expected
+
+    def test_extension_preserved_case(self):
+        assert image_prep.staged_filename("BOOT.IMG") == "BOOT.IMG"
+
 
 # ── Test fixtures ───────────────────────────────────────────────────────────
 

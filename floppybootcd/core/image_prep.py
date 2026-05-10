@@ -11,6 +11,7 @@ user-facing error.
 from __future__ import annotations
 
 import functools
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -40,18 +41,41 @@ def is_compressed(path: str | Path) -> bool:
     return Path(path).suffix.lower() in COMPRESSED_EXTS
 
 
+# Characters SYSLINUX/ISOLINUX can't tolerate in an APPEND path
+# (whitespace splits the kernel command line, '#' starts a comment, ';'
+# and ',' are field separators in some loaders). Replaced with '_' to
+# keep the on-disc filename unambiguous. ISO 9660 itself permits more,
+# but the bootloader is the strict link in the chain.
+_ISO_UNSAFE_CHARS_RE = re.compile(r"[\s#;,]+")
+
+
+def _sanitize_iso_filename(name: str) -> str:
+    """Make *name* safe to embed in an ISOLINUX APPEND directive.
+
+    Replaces whitespace and a few other ISOLINUX-unsafe characters
+    with single underscores, collapses underscore runs, and trims
+    leading/trailing underscores. Empty results fall back to "image".
+    """
+    s = _ISO_UNSAFE_CHARS_RE.sub("_", name)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "image"
+
+
 def staged_filename(src_name: str) -> str:
     """Filename to use when staging *src_name* into the ISO's images dir.
 
-    Raw images keep their name. ``.imz`` containers are always staged
-    as ``<stem>.ima`` regardless of the inner member's actual extension
-    (``.ima`` is the canonical raw-floppy-image extension and what the
-    burned disc should advertise).
+    Raw images keep their name (with whitespace and other
+    SYSLINUX-unsafe characters replaced with underscores so the
+    isolinux.cfg ``APPEND initrd=/images/<file>`` line parses
+    correctly). ``.imz`` containers are always staged as
+    ``<stem>.ima`` regardless of the inner member's actual extension
+    (``.ima`` is the canonical raw-floppy-image extension and what
+    the burned disc should advertise).
     """
     p = Path(src_name)
     if p.suffix.lower() in COMPRESSED_EXTS:
-        return p.stem + ".ima"
-    return p.name
+        return _sanitize_iso_filename(p.stem) + ".ima"
+    return _sanitize_iso_filename(p.stem) + p.suffix
 
 
 def _open_imz(src: Path) -> zipfile.ZipFile:
