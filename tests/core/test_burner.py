@@ -252,6 +252,114 @@ class TestMacOSBurnerListDrives:
         assert MacOSBurner().list_drives() == []
 
 
+class TestLinuxBurnFlow:
+    """End-to-end flow tests for LinuxBurner.burn() with mocked subprocess.
+    These pin the subtle ordering between burn / verify / eject."""
+
+    def _stub_run_streaming(self, monkeypatch, captured):
+        def fake(cmd, log, progress=None, progress_re=None):
+            captured.append(("burn_cmd", list(cmd)))
+            log("$ " + " ".join(cmd))
+            return 0
+        monkeypatch.setattr(burner_mod, "_run_streaming", fake)
+
+    def _stub_eject(self, monkeypatch, captured):
+        monkeypatch.setattr(
+            burner_mod.shutil, "which",
+            lambda name: "/usr/bin/eject" if name == "eject" else "/usr/bin/xorriso",
+        )
+
+        def fake_run(cmd, *a, **k):
+            captured.append(("eject_cmd", list(cmd)))
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+    def test_eject_passed_to_burn_when_no_verify(self, monkeypatch, tmp_path):
+        captured: list = []
+        self._stub_run_streaming(monkeypatch, captured)
+        # Make _verify never get called; eject after-the-fact also a no-op.
+        monkeypatch.setattr(LinuxBurner, "_verify", lambda *a, **k: True)
+        monkeypatch.setattr(LinuxBurner, "_eject",
+                            lambda self, dev, log: captured.append(("post_eject", dev)))
+        # Pretend xorriso exists.
+        monkeypatch.setattr(
+            burner_mod.shutil, "which",
+            lambda name: "/usr/bin/xorriso" if name == "xorriso" else None,
+        )
+
+        iso = tmp_path / "x.iso"
+        iso.write_bytes(b"x")
+        LinuxBurner().burn(
+            iso, OpticalDrive(device="/dev/sr0"),
+            verify=False, eject=True,
+            progress=lambda *_: None, log=lambda _: None,
+        )
+        # -eject should be in the burn command itself (no verify means we
+        # can let cdrecord do it).
+        burn_cmd = next(c for tag, c in captured if tag == "burn_cmd")
+        assert "-eject" in burn_cmd
+        # And we should not have called the post-burn _eject helper.
+        assert not any(tag == "post_eject" for tag, _ in captured)
+
+    def test_eject_deferred_until_after_verify(self, monkeypatch, tmp_path):
+        """Bug regression: with verify+eject, cdrecord must NOT eject during
+        the burn — otherwise verify can't read the disc back."""
+        captured: list = []
+        self._stub_run_streaming(monkeypatch, captured)
+
+        def fake_verify(self, iso_path, device, log):
+            captured.append(("verify", device))
+            return True
+
+        def fake_eject(self, device, log):
+            captured.append(("post_eject", device))
+
+        monkeypatch.setattr(LinuxBurner, "_verify", fake_verify)
+        monkeypatch.setattr(LinuxBurner, "_eject", fake_eject)
+        monkeypatch.setattr(
+            burner_mod.shutil, "which",
+            lambda name: "/usr/bin/xorriso" if name == "xorriso" else None,
+        )
+
+        iso = tmp_path / "x.iso"
+        iso.write_bytes(b"x")
+        LinuxBurner().burn(
+            iso, OpticalDrive(device="/dev/sr0"),
+            verify=True, eject=True,
+            progress=lambda *_: None, log=lambda _: None,
+        )
+
+        burn_cmd = next(c for tag, c in captured if tag == "burn_cmd")
+        # Critical: no -eject in the burn command.
+        assert "-eject" not in burn_cmd
+        # Order must be: burn → verify → post-eject.
+        tags = [t for t, _ in captured]
+        assert tags.index("burn_cmd") < tags.index("verify") < tags.index("post_eject")
+
+    def test_no_eject_when_user_unchecked(self, monkeypatch, tmp_path):
+        captured: list = []
+        self._stub_run_streaming(monkeypatch, captured)
+        monkeypatch.setattr(LinuxBurner, "_verify", lambda *a, **k: True)
+        monkeypatch.setattr(LinuxBurner, "_eject",
+                            lambda self, dev, log: captured.append(("post_eject", dev)))
+        monkeypatch.setattr(
+            burner_mod.shutil, "which",
+            lambda name: "/usr/bin/xorriso" if name == "xorriso" else None,
+        )
+
+        iso = tmp_path / "x.iso"
+        iso.write_bytes(b"x")
+        LinuxBurner().burn(
+            iso, OpticalDrive(device="/dev/sr0"),
+            verify=True, eject=False,
+            progress=lambda *_: None, log=lambda _: None,
+        )
+        burn_cmd = next(c for tag, c in captured if tag == "burn_cmd")
+        assert "-eject" not in burn_cmd
+        assert not any(tag == "post_eject" for tag, _ in captured)
+
+
 class TestPlatformGating:
     def test_macos_burner_only_available_on_macos(self, monkeypatch):
         monkeypatch.setattr(

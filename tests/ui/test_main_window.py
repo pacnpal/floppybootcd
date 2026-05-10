@@ -15,6 +15,7 @@ def win(qtbot, tmp_path, monkeypatch):
     # Isolate QSettings to a temp INI file. XDG_CONFIG_HOME alone only works
     # on Linux — Windows uses the registry, macOS uses plists. Forcing
     # IniFormat + a custom path covers all three.
+    prev_default = QSettings.defaultFormat()
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
     QSettings.setPath(
         QSettings.Format.IniFormat,
@@ -28,7 +29,10 @@ def win(qtbot, tmp_path, monkeypatch):
     # hangs at qtbot teardown. Bypass the prompt for tests.
     monkeypatch.setattr(w, "_maybe_save", lambda: True)
     qtbot.addWidget(w)
-    return w
+    yield w
+    # Restore global QSettings defaults so this fixture doesn't leak into
+    # other tests sharing the process.
+    QSettings.setDefaultFormat(prev_default)
 
 
 class TestMainWindowAddPaths:
@@ -121,6 +125,70 @@ class TestProjectIO:
         win._dirty = False
         win.timeout_spin.setValue(99)
         assert win._dirty is True
+
+
+class TestProjectSyncOnUIChange:
+    """Regression: UI controls must write through to self.project AND mark
+    dirty, otherwise edits are silently lost on Save Project."""
+
+    def test_bootloader_change_syncs_and_marks_dirty(self, win):
+        win._dirty = False
+        # The combo only has ISOLINUX by default; force a manual data change
+        # via the slot directly so the test isn't dependent on having two
+        # registered backends.
+        win.bootloader_combo.addItem("Fake Bootloader", "fake-id")
+        win.bootloader_combo.setCurrentIndex(win.bootloader_combo.count() - 1)
+        assert win.project.bootloader == "fake-id"
+        assert win._dirty is True
+
+    def test_timeout_change_syncs_and_marks_dirty(self, win):
+        win._dirty = False
+        win.timeout_spin.setValue(77)
+        assert win.project.timeout_secs == 77
+        assert win._dirty is True
+
+    def test_save_after_timeout_change_persists_value(self, win, tmp_path):
+        """The whole point of #4: edit timeout, save, reopen — value sticks."""
+        win.timeout_spin.setValue(123)
+        out = tmp_path / "p.fbcd"
+        win.project_path = out
+        ok = win._save_project()
+        assert ok is True
+        # Re-open from disk and check the persisted value.
+        loaded = Project.load(out)
+        assert loaded.timeout_secs == 123
+
+
+class TestXorrisoPathSetting:
+    def test_value_is_threaded_into_build_options(self, win, tmp_path):
+        win.settings.setValue("xorriso_path", "/opt/custom/xorriso")
+        f = tmp_path / "a.img"
+        f.write_bytes(b"x")
+        win._add_paths([str(f)])
+
+        # Capture the BuildOptions handed to the worker without actually
+        # building. Patch QThread.start so the worker never runs.
+        captured: dict = {}
+        from floppybootcd.core import iso_builder
+
+        real_options = iso_builder.BuildOptions
+
+        def spy_options(*args, **kwargs):
+            opts = real_options(*args, **kwargs)
+            captured["opts"] = opts
+            return opts
+
+        import floppybootcd.ui.main_window as mw_mod
+        original = mw_mod.iso_builder.BuildOptions
+        mw_mod.iso_builder.BuildOptions = spy_options
+        try:
+            from PySide6.QtCore import QThread
+            QThread.start = lambda self, *a, **k: None  # type: ignore[assignment]
+            win._build_iso(tmp_path / "out.iso", then_burn=False)
+        finally:
+            mw_mod.iso_builder.BuildOptions = original
+
+        assert captured["opts"].xorriso_override == "/opt/custom/xorriso"
 
 
 class TestUpdateTitle:

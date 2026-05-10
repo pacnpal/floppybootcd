@@ -79,6 +79,28 @@ class TestImageListWidget:
         assert "MB" in text
 
 
+class TestEnterKeyEditsSelection:
+    def test_enter_emits_edit_requested(self, widget, tmp_path, qtbot):
+        from PySide6.QtCore import Qt as QtConst
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtCore import QEvent
+
+        f = tmp_path / "a.img"
+        f.write_bytes(b"x")
+        widget.add_image(FloppyImage(path=str(f)))
+        widget.item(0).setSelected(True)
+
+        with qtbot.waitSignal(widget.edit_requested, timeout=1000):
+            qtbot.keyClick(widget, QtConst.Key.Key_Return)
+
+    def test_enter_with_no_selection_does_not_emit(self, widget, qtbot):
+        from PySide6.QtCore import Qt as QtConst
+        emitted: list[None] = []
+        widget.edit_requested.connect(lambda: emitted.append(None))
+        qtbot.keyClick(widget, QtConst.Key.Key_Return)
+        assert emitted == []
+
+
 class TestExistingPaths:
     def test_existing_paths_set(self, widget, tmp_path):
         f = tmp_path / "a.img"

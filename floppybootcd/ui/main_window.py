@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self.bootloader_combo = QComboBox()
         for cls in available_backends():
             self.bootloader_combo.addItem(cls.label, cls.id)
+        self.bootloader_combo.currentIndexChanged.connect(self._on_bootloader_changed)
         top_form.addRow("Bootloader:", self.bootloader_combo)
 
         self.menu_style_combo = QComboBox()
@@ -98,7 +99,7 @@ class MainWindow(QMainWindow):
         self.timeout_spin.setSuffix(" s")
         self.timeout_spin.setValue(self.project.timeout_secs)
         self.timeout_spin.setSpecialValueText("No auto-boot")
-        self.timeout_spin.valueChanged.connect(self._mark_dirty)
+        self.timeout_spin.valueChanged.connect(self._on_timeout_changed)
         top_form.addRow("Boot timeout:", self.timeout_spin)
 
         outer.addWidget(top)
@@ -110,6 +111,7 @@ class MainWindow(QMainWindow):
         self.list_widget.items_reordered.connect(self._on_list_reordered)
         self.list_widget.selection_changed.connect(self._update_selection_buttons)
         self.list_widget.itemDoubleClicked.connect(lambda _: self._edit_selected())
+        self.list_widget.edit_requested.connect(self._edit_selected)
         middle.addWidget(self.list_widget, 1)
 
         side = QVBoxLayout()
@@ -224,6 +226,10 @@ class MainWindow(QMainWindow):
         m_edit.addAction(a_add)
 
         m_tools = self.menuBar().addMenu("&Tools")
+        a_xorriso = QAction("Set &xorriso Path...", self)
+        a_xorriso.triggered.connect(self._set_xorriso_path)
+        m_tools.addAction(a_xorriso)
+        m_tools.addSeparator()
         a_clear_cache = QAction("Clear Syslinux Cache", self)
         a_clear_cache.triggered.connect(self._clear_syslinux_cache)
         m_tools.addAction(a_clear_cache)
@@ -261,6 +267,17 @@ class MainWindow(QMainWindow):
 
     def _on_menu_style_changed(self) -> None:
         self.project.menu_style = self.menu_style_combo.currentData()
+        self._mark_dirty()
+
+    def _on_bootloader_changed(self) -> None:
+        data = self.bootloader_combo.currentData()
+        if data is None:
+            return
+        self.project.bootloader = data
+        self._mark_dirty()
+
+    def _on_timeout_changed(self, value: int) -> None:
+        self.project.timeout_secs = value
         self._mark_dirty()
 
     def _on_list_reordered(self) -> None:
@@ -494,7 +511,10 @@ class MainWindow(QMainWindow):
             )
             return
 
-        options = iso_builder.BuildOptions(output_path=output_path)
+        options = iso_builder.BuildOptions(
+            output_path=output_path,
+            xorriso_override=str(self.settings.value("xorriso_path", "")),
+        )
         self._build_thread = QThread(self)
         self._build_worker = _BuildWorker(self.project, options)
         self._build_worker.moveToThread(self._build_thread)
@@ -557,6 +577,23 @@ class MainWindow(QMainWindow):
             )
 
     # ── Tools ───────────────────────────────────────────────────────────────────────
+
+    def _set_xorriso_path(self) -> None:
+        current = str(self.settings.value("xorriso_path", ""))
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Locate xorriso",
+            current or str(Path.home()),
+            "All files (*)",
+        )
+        if not path:
+            return
+        if not Path(path).is_file():
+            QMessageBox.warning(self, "Not found",
+                                f"No file at:\n{path}")
+            return
+        self.settings.setValue("xorriso_path", path)
+        self.statusBar().showMessage(f"xorriso path set: {path}", 5000)
+        self._append_log(f"xorriso override set to: {path}")
 
     def _clear_syslinux_cache(self) -> None:
         ans = QMessageBox.question(

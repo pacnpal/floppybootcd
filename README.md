@@ -747,8 +747,8 @@ python -m floppybootcd
 
 **"xorriso not found"**
 Install xorriso (see the [system dependency](#system-dependency-xorriso)
-section). Or if it's installed in a non-standard location, point to it via
-the **xorriso path** field in settings.
+section). If it's installed in a non-standard location, point to it via
+**Tools → Set xorriso Path...** — the path is remembered between runs.
 
 **"Failed to load libcom32.c32" at boot**
 The `lib*.c32` modules didn't end up on the disc. Run **Tools → Clear

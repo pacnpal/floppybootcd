@@ -255,19 +255,20 @@ class LinuxBurner(BurnerBackend):
             raise RuntimeError("Select a drive before burning.")
         tool, tool_path = self._find_tool()
 
+        # If verify is requested, defer ejecting — otherwise the drive opens
+        # the tray right after burn and verify can't read the disc back.
+        eject_during_burn = eject and not verify
+
         if tool == "xorriso":
             cmd = [
                 tool_path, "-as", "cdrecord",
                 "-v", f"dev={drive.device}", "-dao",
             ]
-            if eject:
-                cmd.append("-eject")
-            cmd.append(str(iso_path))
         else:
             cmd = [tool_path, "-v", f"dev={drive.device}", "-dao"]
-            if eject:
-                cmd.append("-eject")
-            cmd.append(str(iso_path))
+        if eject_during_burn:
+            cmd.append("-eject")
+        cmd.append(str(iso_path))
 
         progress("Burning...", -1.0)
         # cdrecord prints "Track 01: x of y MB" - parse for progress
@@ -289,7 +290,25 @@ class LinuxBurner(BurnerBackend):
             except Exception as e:
                 raise RuntimeError(f"Verify error: {e}") from e
 
+        # Eject ourselves now that verify (if any) has finished.
+        if eject and not eject_during_burn:
+            self._eject(drive.device, log)
+
         progress("Burn complete.", 1.0)
+
+    def _eject(self, device: str, log: Callable[[str], None]) -> None:
+        """Open the drive tray after a successful verify."""
+        eject_bin = shutil.which("eject")
+        if not eject_bin:
+            log("WARNING: 'eject' not found on PATH; leaving disc in drive.")
+            return
+        try:
+            subprocess.run(
+                [eject_bin, device],
+                capture_output=True, text=True, check=False, timeout=15,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            log(f"WARNING: eject failed: {e}")
 
     def _verify(self, iso_path: Path, device: str, log: Callable[[str], None]) -> bool:
         """Compare ISO bytes to read-back from disc, sector by sector."""
