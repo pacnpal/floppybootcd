@@ -3,10 +3,12 @@ name: Deploy GitHub Pages
 # Publishes the 90s-style landing page in docs/ to GitHub Pages.
 #
 # Triggers:
-#   - push to main when docs/ or this workflow change (deploys page edits)
-#   - release published (refreshes the page so its build-time release
-#     snapshot points at the newly published version; the page also
-#     fetches live release data client-side as a fallback)
+#   - push to main when docs/ or this workflow change
+#   - workflow_run when the "Release Binaries" workflow completes —
+#     fires AFTER release.yml has uploaded all assets, so the
+#     build-time release snapshot is never injected with an empty
+#     `assets: []` (which was the cause of the page briefly showing
+#     downloads then flipping to "Couldn't fetch release info")
 #   - manual dispatch
 #
 # Setup: in repo Settings -> Pages, set Source = "GitHub Actions".
@@ -17,8 +19,9 @@ on:
     paths:
       - "docs/**"
       - ".github/workflows/pages.yml"
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release Binaries"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -26,17 +29,18 @@ permissions:
   pages: write
   id-token: write
 
-# Only one Pages deploy at a time. cancel-in-progress: true because a
-# tag push commonly fires two events back-to-back (push-to-main +
-# release-published) and both deploy the same SHA — github-pages
-# rejects the second as a duplicate. Cancelling the older in-flight
-# run is safe: the surviving run injects the same (or newer) data.
+# Serialize deploys but don't cancel — workflow_run normally fires
+# minutes after the push-triggered run finishes, so there is no
+# in-flight conflict to race against. cancel-in-progress: false also
+# avoids a docs push silently killing a still-deploying release run.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
+    # Skip when chained off a failed Release Binaries run.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -48,17 +52,27 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Pull the latest published (non-draft, non-prerelease) release.
-          # If there is none yet, fall back gracefully so the page still
-          # builds; the client-side fetch will fill in later.
-          if ! gh api "repos/${GITHUB_REPOSITORY}/releases/latest" \
+          # Pick the most recent release that actually has binary assets
+          # uploaded. `/releases/latest` alone can return a release that
+          # was just created but whose release.yml hasn't finished
+          # uploading binaries yet — injecting that empty-assets
+          # snapshot makes the client renderer flash through downloads
+          # before flipping to the "Couldn't fetch" error. Walking the
+          # list and skipping empty releases avoids that race entirely.
+          if gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=10" \
                  --header "Accept: application/vnd.github+json" \
-                 > release.json 2>/dev/null; then
-            echo "No published release yet — skipping injection."
+                 --jq 'map(select(.draft==false and .prerelease==false and (.assets | length > 0))) | .[0]' \
+                 > release.json 2>/dev/null \
+             && [ "$(cat release.json)" != "" ] \
+             && [ "$(cat release.json)" != "null" ]; then
+            TAG=$(jq -r '.tag_name' release.json)
+            COUNT=$(jq '.assets | length' release.json)
+            echo "Injecting release ${TAG} (${COUNT} assets)."
+            echo "injected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release with assets yet — leaving placeholder null."
             echo "injected=false" >> "$GITHUB_OUTPUT"
             echo "null" > release.json
-          else
-            echo "injected=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Inject release data into index.html
@@ -92,14 +106,15 @@ jobs:
           }
 
           src = page.read_text()
-          # ensure_ascii=False so non-ASCII chars (em-dashes in release names,
-          # smart quotes) stay literal — otherwise json.dumps emits \uXXXX
-          # escapes that re.sub interprets as regex replacement templates and
-          # explodes with 'bad escape \u'.
+          # ensure_ascii=False so non-ASCII chars (em-dashes in release
+          # names, smart quotes) stay literal — otherwise json.dumps emits
+          # \uXXXX escapes that re.sub interprets as regex replacement
+          # templates and explodes with 'bad escape \u'.
           payload = json.dumps(slim, separators=(",", ":"), ensure_ascii=False)
           replacement = "/*BUILD_DATA_START*/" + payload + "/*BUILD_DATA_END*/"
-          # Pass replacement as a lambda to bypass re.sub's template parsing
-          # entirely — belt-and-suspenders against future escape characters.
+          # Pass replacement as a lambda to bypass re.sub's template
+          # parsing entirely — belt-and-suspenders against future escape
+          # characters.
           new = re.sub(
               r"/\*BUILD_DATA_START\*/.*?/\*BUILD_DATA_END\*/",
               lambda _m: replacement,
@@ -128,37 +143,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # Tag pushes commonly fire two events back-to-back: push-to-main
-      # (with a docs/ change) and release-published. Both point at the
-      # same SHA, so both runs deploy identical content. github-pages
-      # rejects the second deploy with a one-second "waiting -> failure"
-      # for the same SHA. Detect that case and skip the deploy step
-      # instead of letting it fail — the site is already up-to-date.
-      - name: Check if current SHA already deployed to Pages
-        id: dedup
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # Look at the latest 30 github-pages deployments; if any one
-          # for this exact SHA succeeded already, skip.
-          DEPLOYED=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/deployments?environment=github-pages&per_page=30" \
-            --jq "[.[] | select(.sha==\"${GITHUB_SHA}\") | .id] | .[]" \
-            | head -n 5)
-          for id in $DEPLOYED; do
-            STATE=$(gh api \
-              "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" \
-              --jq '[.[] | .state] | .[0]')
-            if [ "$STATE" = "success" ]; then
-              echo "Deployment ${id} for SHA ${GITHUB_SHA} already succeeded — skipping deploy."
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
       - name: Deploy to GitHub Pages
-        if: steps.dedup.outputs.skip != 'true'
         id: deployment
         uses: actions/deploy-pages@v4

@@ -352,9 +352,9 @@
       <p>
         <strong>FloppyBootCD</strong> builds bootable CDs from collections of
         floppy disk images for vintage computers. Drop in your
-        <code>.img</code> / <code>.ima</code> files, give each one a menu
-        label, hit Build, and get a CD that boots into a menu where you
-        pick which floppy to load.
+        <code>.img</code> / <code>.ima</code> / <code>.imz</code> files,
+        give each one a menu label, hit Build, and get a CD that boots
+        into a menu where you pick which floppy to load.
       </p>
       <p>
         Each image is loaded into RAM via <strong>MEMDISK</strong> and
@@ -366,7 +366,12 @@
         <li>Cross-platform GUI (PySide6 / Qt6)</li>
         <li>Bundled <code>xorriso</code> &mdash; no extra installs</li>
         <li>ISOLINUX + MEMDISK boot menus</li>
-        <li>macOS / Windows / Linux &mdash; x86_64 and arm64</li>
+        <li><strong>WinImage <code>.imz</code></strong> compressed
+            images, extracted at build time</li>
+        <li>Live <strong>CD-R capacity meter</strong> &mdash;
+            see usage in MiB before you burn</li>
+        <li>macOS / Windows / Linux &mdash; x86_64 and arm64
+            (Linux as AppImage, .deb, .rpm, tarball)</li>
       </ul>
     </div>
 
@@ -539,8 +544,25 @@ floppybootcd</code></pre>
     return (n/(1024*1024*1024)).toFixed(2) + " GB";
   }
 
+  // render returns true on success (release had at least one matching
+  // asset), false otherwise. Callers use the return value to decide
+  // whether a later data source (preloaded vs. fetched) is allowed to
+  // replace what's currently shown — we never overwrite a working
+  // download table with an error state.
   function render(release) {
-    if (!release || !release.assets) { renderError(); return; }
+    if (!release || !release.assets || release.assets.length === 0) {
+      return false;
+    }
+
+    // Pre-flight: count matches before touching the DOM so an
+    // incomplete release (e.g. fetched mid-upload) can't blow away a
+    // good preloaded render.
+    const matches = PLATFORMS.map(p => ({
+      p,
+      asset: release.assets.find(a => p.match.test(a.name)),
+    }));
+    if (!matches.some(m => m.asset)) return false;
+
     document.getElementById("release-tag").textContent = release.tag_name || release.name || "latest";
     document.getElementById("ver-status").textContent = (release.tag_name || "?").replace(/^v/, "v");
     document.getElementById("release-link").href = release.html_url ||
@@ -553,9 +575,7 @@ floppybootcd</code></pre>
 
     const tbody = document.getElementById("dl-body");
     tbody.innerHTML = "";
-    let any = false;
-    for (const p of PLATFORMS) {
-      const asset = release.assets.find(a => p.match.test(a.name));
+    for (const { p, asset } of matches) {
       const tr = document.createElement("tr");
       const url = asset ? asset.browser_download_url
                         : "https://github.com/" + REPO + "/releases/latest";
@@ -570,9 +590,8 @@ floppybootcd</code></pre>
           : "<a class='dl-button' href='" + url + "' style='opacity:0.6'>releases</a>") +
         "</td>";
       tbody.appendChild(tr);
-      if (asset) any = true;
     }
-    if (!any) renderError();
+    return true;
   }
 
   function renderError() {
@@ -595,15 +614,25 @@ floppybootcd</code></pre>
   const visitor = String(1337 + (seed * 73 % 90000)).padStart(8, "0");
   document.getElementById("counter").textContent = visitor;
 
-  // Render preloaded data first (zero-latency), then refresh from API if reachable.
-  if (PRELOADED) render(PRELOADED);
+  // Render preloaded data first (zero-latency), then refresh from API
+  // if reachable. The fetch can only IMPROVE the picture: a successful
+  // render is never replaced by an error, and a freshly-cut release
+  // whose binaries haven't uploaded yet is never allowed to nuke a
+  // working table.
+  let rendered = PRELOADED ? render(PRELOADED) : false;
 
   fetch("https://api.github.com/repos/" + REPO + "/releases/latest", {
     headers: { "Accept": "application/vnd.github+json" }
   })
     .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-    .then(render)
-    .catch(() => { if (!PRELOADED) renderError(); });
+    .then(release => {
+      if (render(release)) {
+        rendered = true;
+      } else if (!rendered) {
+        renderError();
+      }
+    })
+    .catch(() => { if (!rendered) renderError(); });
 </script>
 
 </body>
