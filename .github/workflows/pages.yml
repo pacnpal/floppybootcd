@@ -26,11 +26,14 @@ permissions:
   pages: write
   id-token: write
 
-# Only one Pages deploy at a time; let in-flight runs finish so a release
-# publish never gets cancelled by a follow-up docs push.
+# Only one Pages deploy at a time. cancel-in-progress: true because a
+# tag push commonly fires two events back-to-back (push-to-main +
+# release-published) and both deploy the same SHA — github-pages
+# rejects the second as a duplicate. Cancelling the older in-flight
+# run is safe: the surviving run injects the same (or newer) data.
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -125,6 +128,37 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # Tag pushes commonly fire two events back-to-back: push-to-main
+      # (with a docs/ change) and release-published. Both point at the
+      # same SHA, so both runs deploy identical content. github-pages
+      # rejects the second deploy with a one-second "waiting -> failure"
+      # for the same SHA. Detect that case and skip the deploy step
+      # instead of letting it fail — the site is already up-to-date.
+      - name: Check if current SHA already deployed to Pages
+        id: dedup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Look at the latest 30 github-pages deployments; if any one
+          # for this exact SHA succeeded already, skip.
+          DEPLOYED=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/deployments?environment=github-pages&per_page=30" \
+            --jq "[.[] | select(.sha==\"${GITHUB_SHA}\") | .id] | .[]" \
+            | head -n 5)
+          for id in $DEPLOYED; do
+            STATE=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" \
+              --jq '[.[] | .state] | .[0]')
+            if [ "$STATE" = "success" ]; then
+              echo "Deployment ${id} for SHA ${GITHUB_SHA} already succeeded — skipping deploy."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to GitHub Pages
+        if: steps.dedup.outputs.skip != 'true'
         id: deployment
         uses: actions/deploy-pages@v4
