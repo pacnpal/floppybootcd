@@ -31,24 +31,29 @@ jobs:
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: MSYS
           update: false
-          install: mingw-w64-x86_64-libisoburn
+          install: xorriso
 
       - name: Stage xorriso bundle
         shell: msys2 {0}
         run: |
           set -euo pipefail
           mkdir -p staging-xorriso/bin
-          cp /mingw64/bin/xorriso.exe staging-xorriso/bin/
-          # Copy every MinGW DLL xorriso depends on. System DLLs (kernel32 etc.)
-          # come from Windows itself, so filter to /mingw64/.
-          ldd /mingw64/bin/xorriso.exe \
-            | grep -i 'mingw64' \
-            | awk '{print $3}' \
+          # MSYS2 ships xorriso in the msys repo (Cygwin-style binary).
+          # The .exe lives at /usr/bin/xorriso and depends on msys-2.0.dll
+          # plus a handful of msys-* runtime DLLs. Copy the binary and
+          # every DLL it loads from /usr/bin so the bundle runs anywhere
+          # on Windows without an installed MSYS2.
+          cp /usr/bin/xorriso staging-xorriso/bin/xorriso.exe
+          ldd /usr/bin/xorriso \
+            | awk '/=> \/usr\/bin\//{print $3}' \
             | while read -r dll; do
                 [ -f "$dll" ] && cp -f "$dll" staging-xorriso/bin/
               done
+          # Sanity check that the staged binary runs from outside its
+          # original install dir.
+          ls -la staging-xorriso/bin/
           ./staging-xorriso/bin/xorriso.exe -version | head -3
 
       - name: Upload Windows xorriso bundle
