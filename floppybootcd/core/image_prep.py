@@ -87,12 +87,14 @@ def _pick_inner_member(zf: zipfile.ZipFile, src_name: str) -> zipfile.ZipInfo:
 def verify_imz_readable(path: str | Path) -> str | None:
     """Return None if *path* is a fully readable ``.imz`` we can stage.
 
-    Otherwise return a user-facing error string explaining why. This
-    goes beyond ``probe_uncompressed_size`` (which only reads the ZIP
-    central directory) by checking the inner member's encryption flag
-    and attempting a small read so the build doesn't fail mid-stage on
-    encrypted / password-protected archives or unsupported compression
-    methods.
+    Otherwise return a user-facing error string explaining why. The
+    returned string never repeats the source filename — callers are
+    expected to prefix their own context. This goes beyond
+    ``probe_uncompressed_size`` (which only reads the ZIP central
+    directory) by checking the inner member's encryption flag and
+    attempting a small read so the build doesn't fail mid-stage on
+    encrypted / password-protected archives or unsupported
+    compression methods.
     """
     p = Path(path)
     try:
@@ -101,17 +103,30 @@ def verify_imz_readable(path: str | Path) -> str | None:
             # Bit 0 of the general-purpose flag is the encryption flag.
             if member.flag_bits & 0x1:
                 return (
-                    f"{p.name}: inner image is encrypted "
-                    "(password-protected). Re-save it from WinImage "
-                    "without a password, or extract the .ima first."
+                    "inner image is encrypted (password-protected). "
+                    "Re-save it from WinImage without a password, or "
+                    "extract the .ima first."
                 )
+            # A 0-byte inner image is structurally readable but
+            # non-bootable; reject up-front rather than producing an
+            # empty staged .ima.
+            if member.file_size == 0:
+                return "inner image is empty (0 bytes)."
             # Attempt a small read to surface unsupported compression
             # methods (NotImplementedError) and CRC issues now rather
             # than during the build.
             with zf.open(member) as fh:
                 fh.read(1)
     except ValueError as e:
-        return str(e)
+        # _open_imz / _pick_inner_member raise with a "{name}: ..."
+        # prefix for callers like stage_image that want a standalone
+        # message. Strip it so this helper's contract — "no filename"
+        # — holds and callers can add their own prefix.
+        msg = str(e)
+        prefix = f"{p.name}: "
+        if msg.startswith(prefix):
+            msg = msg[len(prefix):]
+        return msg
     except (
         zipfile.BadZipFile,
         OSError,
@@ -119,9 +134,8 @@ def verify_imz_readable(path: str | Path) -> str | None:
         NotImplementedError,
     ) as e:
         return (
-            f"{p.name}: failed to read .imz ({e}). Re-save it from "
-            "WinImage as 'Compressed image file' or extract the .ima "
-            "first."
+            f"failed to read .imz ({e}). Re-save it from WinImage as "
+            "'Compressed image file' or extract the .ima first."
         )
     return None
 
