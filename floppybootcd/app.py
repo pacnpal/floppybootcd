@@ -2,14 +2,24 @@
 from __future__ import annotations
 
 import sys
+from importlib.resources import files
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication
 
 from . import APP_ID, APP_NAME
 from .core.platform import Platform
 from .core.plugins import load_plugins
+
+
+def _load_app_icon() -> QIcon:
+    """Load the bundled floppy-disk icon as a QIcon."""
+    try:
+        path = files("floppybootcd.resources") / "icon.png"
+        return QIcon(str(path))
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        return QIcon()
 
 
 def _windows_setup() -> None:
@@ -45,6 +55,7 @@ def main() -> int:
     app.setOrganizationName("pacnpal")
     app.setOrganizationDomain("pacnp.al")
     app.setDesktopFileName("floppybootcd")     # Linux: links to .desktop entry
+    app.setWindowIcon(_load_app_icon())        # taskbar / Alt-Tab / window decoration
     _macos_setup(app)
 
     load_plugins()

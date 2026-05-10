@@ -249,12 +249,19 @@ jobs:
         env:
           PYTHONOPTIMIZE: "1"
         run: |
+          # Pick the right per-platform icon for PyInstaller's --icon flag.
+          case "${{ runner.os }}" in
+            macOS)   ICON=floppybootcd/resources/icon.icns ;;
+            Windows) ICON=floppybootcd/resources/icon.ico  ;;
+            *)       ICON=floppybootcd/resources/icon.png  ;;
+          esac
           pyinstaller \
             --noconfirm \
             --clean \
             --name floppybootcd \
             --windowed \
-            --collect-submodules floppybootcd \
+            --icon "$ICON" \
+            --collect-all floppybootcd \
             --collect-all PySide6 \
             floppybootcd/__main__.py
 
