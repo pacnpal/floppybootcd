@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         middle = QHBoxLayout()
         self.list_widget = ImageListWidget()
         self.list_widget.files_dropped.connect(self._add_paths)
+        self.list_widget.project_dropped.connect(self.open_project_path)
         self.list_widget.items_reordered.connect(self._on_list_reordered)
         self.list_widget.selection_changed.connect(self._update_selection_buttons)
         self.list_widget.itemDoubleClicked.connect(lambda _: self._edit_selected())
@@ -352,7 +353,22 @@ class MainWindow(QMainWindow):
             self, "Open Project", str(Path.home()),
             "FloppyBootCD Project (*.fbcd);;All files (*)",
         )
-        if not path:
+        if path:
+            self.open_project_path(path)
+
+    def open_project_path(self, path: str) -> None:
+        """Load *path* as the current project.
+
+        Public so drag-and-drop on the window, the OS file-association
+        handler (macOS QFileOpenEvent / Windows file-double-click /
+        Linux ``xdg-open``), and any future scripted entry points can
+        share one code path with the File → Open menu action.
+
+        Honors the unsaved-changes prompt the menu action would: a
+        dirty current project is offered Save / Discard / Cancel
+        before the new project replaces it.
+        """
+        if not self._maybe_save():
             return
         try:
             self.project = Project.load(path)
@@ -730,21 +746,44 @@ class MainWindow(QMainWindow):
         )
 
     # ── Drag-drop on window itself ───────────────────────────────────────────────────
+    # The main window is its own drop target as a backstop for when
+    # the cursor lands outside the image list widget (margins, header,
+    # log panel). It accepts the same shapes the list widget does:
+    # individual floppy images, folders to recurse, and .fbcd project
+    # files (which trigger an open-project flow instead of being added
+    # as images).
 
     def dragEnterEvent(self, e) -> None:
         if e.mimeData().hasUrls():
             e.acceptProposedAction()
 
     def dropEvent(self, e) -> None:
-        if e.mimeData().hasUrls():
-            paths = []
-            for url in e.mimeData().urls():
-                if url.isLocalFile():
-                    p = url.toLocalFile()
-                    if Path(p).suffix.lower() in ALL_ACCEPTED_EXTS and Path(p).is_file():
-                        paths.append(p)
-            if paths:
-                self._add_paths(paths)
+        if not e.mimeData().hasUrls():
+            return
+        from ..core.image_prep import walk_floppy_images
+        from ..core.project import PROJECT_EXT
+
+        project_path: str | None = None
+        floppy_paths: list[str] = []
+        existing = {img.path for img in self.project.images}
+        for url in e.mimeData().urls():
+            if not url.isLocalFile():
+                continue
+            p = Path(url.toLocalFile())
+            if p.is_file() and p.suffix.lower() == PROJECT_EXT:
+                project_path = str(p)
+                continue
+            for found in walk_floppy_images(p):
+                if found not in existing and found not in floppy_paths:
+                    floppy_paths.append(found)
+
+        if project_path:
+            self.open_project_path(project_path)
+            e.acceptProposedAction()
+            return
+        if floppy_paths:
+            self._add_paths(floppy_paths)
+            e.acceptProposedAction()
 
     # ── Geometry persistence ─────────────────────────────────────────────────────────
 

@@ -439,6 +439,50 @@ jobs:
           after=$(du -sh dist 2>/dev/null | awk '{print $1}' || echo "?")
           echo "Bundle size after prune:  ${after}"
 
+      # macOS only: patch the .app's Info.plist with CFBundleDocumentTypes
+      # + UTExportedTypeDeclarations so Finder routes .fbcd double-clicks
+      # (and File→Open Recent / drag-to-dock) to FloppyBootCD. The runtime
+      # picks the path up via QFileOpenEvent (see app.FloppyBootCDApplication).
+      - name: Register .fbcd file type in macOS Info.plist
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLIST="dist/floppybootcd.app/Contents/Info.plist"
+          if [ ! -f "$PLIST" ]; then
+            echo "Info.plist not found at $PLIST — skipping association registration."
+            ls -la dist/ || true
+            exit 0
+          fi
+          python3 - <<'PY'
+          import plistlib, pathlib
+          plist = pathlib.Path("dist/floppybootcd.app/Contents/Info.plist")
+          info = plistlib.loads(plist.read_bytes())
+          info["CFBundleDocumentTypes"] = [{
+              "CFBundleTypeName": "FloppyBootCD Project",
+              "CFBundleTypeRole": "Editor",
+              "CFBundleTypeExtensions": ["fbcd"],
+              "CFBundleTypeIconFile": "icon-windowed.icns",
+              "LSHandlerRank": "Owner",
+              "LSItemContentTypes": ["com.pacnpal.floppybootcd.project"],
+          }]
+          info["UTExportedTypeDeclarations"] = [{
+              "UTTypeIdentifier": "com.pacnpal.floppybootcd.project",
+              "UTTypeDescription": "FloppyBootCD Project",
+              "UTTypeConformsTo": ["public.data", "public.content"],
+              "UTTypeTagSpecification": {
+                  "public.filename-extension": ["fbcd"],
+                  "public.mime-type": ["application/x-floppybootcd-project"],
+              },
+          }]
+          # Set the bundle identifier explicitly so Launch Services keys
+          # association entries to a stable ID instead of the per-build
+          # PyInstaller default.
+          info["CFBundleIdentifier"] = "com.pacnpal.floppybootcd"
+          plist.write_bytes(plistlib.dumps(info))
+          print("Patched Info.plist for .fbcd association.")
+          PY
+
       - name: Bundle xorriso and license notices into PyInstaller output
         shell: bash
         run: |
@@ -472,6 +516,15 @@ jobs:
           if [ -d "dist/floppybootcd.app" ]; then
             cp THIRD_PARTY_NOTICES.md dist/
             cp LICENSE-xorriso dist/
+          fi
+          # Windows: surface the .fbcd registration helpers at the top of
+          # the zip so users see them without digging into _internal/.
+          # Double-clicking register-fbcd-windows.reg associates .fbcd
+          # files with this app for the current user; unregister-fbcd-windows.reg
+          # backs it out. Per-user (HKCU) keeps the elevation prompt away.
+          if [ "${{ runner.os }}" = "Windows" ] && [ -d "dist/floppybootcd" ]; then
+            cp floppybootcd/resources/register-fbcd-windows.reg dist/floppybootcd/ || true
+            cp floppybootcd/resources/unregister-fbcd-windows.reg dist/floppybootcd/ || true
           fi
 
       - name: Package Linux build
@@ -531,12 +584,47 @@ jobs:
           Categories=Utility;System;FileTools;
           Terminal=false
           StartupNotify=true
+          MimeType=application/x-floppybootcd-project;
           EOF
+
+          # Freedesktop shared-mime-info entry. File managers
+          # (Nautilus, Dolphin, Thunar, ...) consult this database
+          # to decide which application opens a given file. The
+          # post-install hook below runs `update-mime-database` so
+          # the new type takes effect without a logout.
+          mkdir -p "$STAGE/usr/share/mime/packages"
+          cp floppybootcd/resources/floppybootcd.xml \
+             "$STAGE/usr/share/mime/packages/floppybootcd.xml"
 
           cp floppybootcd/resources/icon.png \
              "$STAGE/usr/share/icons/hicolor/512x512/apps/floppybootcd.png"
           cp LICENSE LICENSE-xorriso THIRD_PARTY_NOTICES.md \
              "$STAGE/usr/share/doc/floppybootcd/"
+
+          # ── post-install / post-uninstall scripts ──────────────────
+          # Rebuild the MIME and desktop databases so .fbcd association
+          # picks up immediately. `command -v` so missing tools (very
+          # stripped-down installs) don't break the install.
+          mkdir -p scripts
+          cat > scripts/post-install.sh <<'EOF'
+          #!/bin/sh
+          set -e
+          if command -v update-mime-database >/dev/null 2>&1; then
+            update-mime-database /usr/share/mime || true
+          fi
+          if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q /usr/share/applications || true
+          fi
+          if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
+          fi
+          exit 0
+          EOF
+          chmod +x scripts/post-install.sh
+          # Re-use the same script for post-remove so the database
+          # caches are refreshed when the .desktop / mime XML goes
+          # away on uninstall.
+          cp scripts/post-install.sh scripts/post-remove.sh
 
           # ── .deb (Debian / Ubuntu / Raspberry Pi OS) ──────────────────
           # ── .rpm (Fedora / RHEL / openSUSE) ───────────────────────────
@@ -553,6 +641,8 @@ jobs:
               --vendor "pacnpal" \
               --category "utils" \
               --deb-no-default-config-files \
+              --after-install scripts/post-install.sh \
+              --after-remove scripts/post-remove.sh \
               -d "libegl1" -d "libxkbcommon0" -d "libxkbcommon-x11-0" \
               -d "libxcb-cursor0" -d "libxcb-icccm4" -d "libxcb-image0" \
               -d "libxcb-keysyms1" -d "libxcb-randr0" -d "libxcb-render-util0" \
@@ -571,6 +661,8 @@ jobs:
               --vendor "pacnpal" \
               --category "Applications/System" \
               --rpm-summary "Build bootable CDs from floppy disk images" \
+              --after-install scripts/post-install.sh \
+              --after-remove scripts/post-remove.sh \
               -d "libxkbcommon" -d "libxkbcommon-x11" \
               -d "xcb-util-cursor" -d "xcb-util-image" -d "xcb-util-keysyms" \
               -d "xcb-util-renderutil" -d "xcb-util-wm" -d "libxcb" \

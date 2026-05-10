@@ -11,18 +11,26 @@ from ..core.image_prep import (
     ALL_ACCEPTED_EXTS,
     COMPRESSED_EXTS,
     probe_uncompressed_size,
+    walk_floppy_images,
 )
-from ..core.project import FloppyImage
+from ..core.project import PROJECT_EXT, FloppyImage
 
 
 class ImageListWidget(QListWidget):
     """List of floppy images. Supports:
        - drag-reorder within the list (InternalMove)
-       - drag external files in from the OS file manager
+       - drag external floppy images in from the OS file manager
+         (.img / .ima / .vfd / .flp / .imz)
+       - drag whole folders in — recurses up to five levels and
+         picks up every floppy image inside
+       - drag a .fbcd project file in — emits ``project_dropped`` so
+         the host window can load the project instead of treating it
+         as a floppy image
        - keyboard delete to remove items
     """
 
     files_dropped = Signal(list)         # list[str] of paths dropped from outside
+    project_dropped = Signal(str)        # absolute path to a dropped .fbcd file
     items_reordered = Signal()
     selection_changed = Signal()         # convenience signal
     edit_requested = Signal()            # Enter pressed on a selection
@@ -42,39 +50,72 @@ class ImageListWidget(QListWidget):
 
     # ── Drag-and-drop ─────────────────────────────────────────────────────────
 
-    def _mime_has_external_files(self, mime) -> bool:
-        return mime.hasUrls() and any(
-            u.isLocalFile() and u.toLocalFile() not in self._existing_paths()
-            for u in mime.urls()
-        )
-
     def _existing_paths(self) -> set[str]:
         return {self.item(i).data(Qt.ItemDataRole.UserRole).path
                 for i in range(self.count())}
 
+    @staticmethod
+    def _url_is_useful(url) -> bool:
+        """True for a local URL that's a folder, a .fbcd project, or
+        a floppy-image file extension we accept. Used to decide
+        whether to accept the drag at hover time."""
+        if not url.isLocalFile():
+            return False
+        p = Path(url.toLocalFile())
+        if p.is_dir():
+            return True
+        if not p.is_file():
+            return False
+        ext = p.suffix.lower()
+        return ext == PROJECT_EXT or ext in ALL_ACCEPTED_EXTS
+
+    def _mime_is_acceptable(self, mime) -> bool:
+        return mime.hasUrls() and any(self._url_is_useful(u) for u in mime.urls())
+
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:
-        if e.mimeData().hasUrls():
+        if self._mime_is_acceptable(e.mimeData()):
             e.acceptProposedAction()
         else:
             super().dragEnterEvent(e)
 
     def dragMoveEvent(self, e: QDragMoveEvent) -> None:
-        if e.mimeData().hasUrls() and self._mime_has_external_files(e.mimeData()):
+        if self._mime_is_acceptable(e.mimeData()):
             e.acceptProposedAction()
         else:
             super().dragMoveEvent(e)
 
     def dropEvent(self, e: QDropEvent) -> None:
-        if e.mimeData().hasUrls() and self._mime_has_external_files(e.mimeData()):
-            paths = []
-            for url in e.mimeData().urls():
-                if url.isLocalFile():
-                    p = url.toLocalFile()
-                    ext = Path(p).suffix.lower()
-                    if Path(p).is_file() and ext in ALL_ACCEPTED_EXTS:
-                        paths.append(p)
-            if paths:
-                self.files_dropped.emit(paths)
+        mime = e.mimeData()
+        if mime.hasUrls() and self._mime_is_acceptable(mime):
+            # Two outcomes are possible from a single drop:
+            # (a) a .fbcd project file → emit project_dropped and let
+            #     the host window load it (replaces the current
+            #     project after the usual unsaved-changes prompt).
+            # (b) any combination of floppy-image files and folders
+            #     → recurse folders, flatten to a deduped path list,
+            #     emit files_dropped. The .fbcd case wins if both
+            #     are present in the same drop because loading a
+            #     project replaces the image list anyway.
+            project_path = None
+            floppy_paths: list[str] = []
+            existing = self._existing_paths()
+            for url in mime.urls():
+                if not url.isLocalFile():
+                    continue
+                p = Path(url.toLocalFile())
+                if p.is_file() and p.suffix.lower() == PROJECT_EXT:
+                    project_path = str(p)
+                    continue
+                for found in walk_floppy_images(p):
+                    if found not in existing and found not in floppy_paths:
+                        floppy_paths.append(found)
+
+            if project_path:
+                self.project_dropped.emit(project_path)
+                e.acceptProposedAction()
+                return
+            if floppy_paths:
+                self.files_dropped.emit(floppy_paths)
                 e.acceptProposedAction()
                 return
             e.ignore()

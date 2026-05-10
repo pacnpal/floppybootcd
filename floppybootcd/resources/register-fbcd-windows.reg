@@ -1,0 +1,34 @@
+Windows Registry Editor Version 5.00
+
+; Register .fbcd files as FloppyBootCD projects, current-user scope.
+; HKCU avoids the elevation prompt; works on a per-user basis the way
+; portable apps prefer. To uninstall, double-click unregister-fbcd-windows.reg
+; in the same folder.
+;
+; Double-click this file to install. Windows shows a confirmation dialog
+; ("Are you sure you want to continue?"). Click Yes. After that, .fbcd
+; files double-clicked in Explorer launch floppybootcd.exe with the path
+; as argv[1]; the app picks that up in main() and opens the project.
+;
+; IMPORTANT: %~dp0 doesn't work in .reg files — Windows won't expand it
+; the way it does in .bat. So this registers the IDEAL path
+; (%LOCALAPPDATA%\FloppyBootCD\floppybootcd.exe) and the install
+; instructions in the README tell users to extract there. For other
+; install locations, hand-edit the (Default) value below.
+
+[HKEY_CURRENT_USER\Software\Classes\.fbcd]
+@="FloppyBootCD.Project"
+
+[HKEY_CURRENT_USER\Software\Classes\FloppyBootCD.Project]
+@="FloppyBootCD Project"
+
+[HKEY_CURRENT_USER\Software\Classes\FloppyBootCD.Project\DefaultIcon]
+@="%LOCALAPPDATA%\\FloppyBootCD\\floppybootcd.exe,0"
+
+[HKEY_CURRENT_USER\Software\Classes\FloppyBootCD.Project\shell]
+
+[HKEY_CURRENT_USER\Software\Classes\FloppyBootCD.Project\shell\open]
+@="Open with FloppyBootCD"
+
+[HKEY_CURRENT_USER\Software\Classes\FloppyBootCD.Project\shell\open\command]
+@="\"%LOCALAPPDATA%\\FloppyBootCD\\floppybootcd.exe\" \"%1\""

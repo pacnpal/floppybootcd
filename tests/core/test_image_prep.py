@@ -78,6 +78,77 @@ class TestStagedFilename:
         assert image_prep.staged_filename("BOOT.IMG") == "BOOT.IMG"
 
 
+class TestWalkFloppyImages:
+    """Drag-drop folder recursion: walk_floppy_images() flattens a
+    dropped path into a deduped, deterministic list of floppy-ext
+    file paths."""
+
+    def test_single_file_returned_as_one_element_list(self, tmp_path):
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"")
+        assert image_prep.walk_floppy_images(f) == [str(f)]
+
+    def test_single_file_with_unknown_ext_returns_empty(self, tmp_path):
+        f = tmp_path / "boot.txt"
+        f.write_bytes(b"")
+        assert image_prep.walk_floppy_images(f) == []
+
+    def test_folder_recursed_for_floppy_images(self, tmp_path):
+        # tmp_path/
+        #   a.img
+        #   nested/
+        #     b.ima
+        #     c.imz
+        #     deep/d.vfd
+        (tmp_path / "a.img").write_bytes(b"")
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        (nested / "b.ima").write_bytes(b"")
+        (nested / "c.imz").write_bytes(b"")
+        deep = nested / "deep"
+        deep.mkdir()
+        (deep / "d.vfd").write_bytes(b"")
+        # Unrelated files
+        (tmp_path / "readme.txt").write_bytes(b"")
+        (nested / "thumbs.db").write_bytes(b"")
+
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert sorted(names) == ["a.img", "b.ima", "c.imz", "d.vfd"]
+
+    def test_folder_skips_hidden_files_and_dirs(self, tmp_path):
+        (tmp_path / ".hidden.img").write_bytes(b"")
+        (tmp_path / "good.img").write_bytes(b"")
+        hidden_dir = tmp_path / ".cache"
+        hidden_dir.mkdir()
+        (hidden_dir / "evicted.img").write_bytes(b"")
+
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert names == ["good.img"]
+
+    def test_folder_skips_apple_double_and_recycle_dirs(self, tmp_path):
+        (tmp_path / "real.img").write_bytes(b"")
+        for trash in (".AppleDouble", "$RECYCLE.BIN", "System Volume Information"):
+            d = tmp_path / trash
+            d.mkdir()
+            (d / "evicted.img").write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert names == ["real.img"]
+
+    def test_nonexistent_path_returns_empty(self, tmp_path):
+        assert image_prep.walk_floppy_images(tmp_path / "missing") == []
+
+    def test_results_are_sorted_deterministic(self, tmp_path):
+        # Add files in reverse alpha order; expect sorted output back.
+        for name in ("z.img", "y.img", "a.img", "m.img"):
+            (tmp_path / name).write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert names == sorted(names)
+
+
 # ── Test fixtures ───────────────────────────────────────────────────────────
 
 INNER_BYTES = b"\x55\xaa" + b"FAKE BPB DATA " * 200  # ~2.7 KB of fake floppy

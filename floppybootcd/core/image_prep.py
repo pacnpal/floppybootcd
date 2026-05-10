@@ -41,6 +41,68 @@ def is_compressed(path: str | Path) -> bool:
     return Path(path).suffix.lower() in COMPRESSED_EXTS
 
 
+# Recursion cap for folder drops. A drag-and-drop is a user gesture
+# meant to express "all the disks in this pile" — not "scan my whole
+# home directory". Five levels deep is generous for any realistic
+# floppy-collection layout (e.g. <year>/<vendor>/<product>/<disk>)
+# without turning a wrong-folder drop into a multi-minute disk scan.
+_DROP_RECURSION_LIMIT = 5
+
+# Per-drop file cap. Anything more than this is almost certainly a
+# misdrop (user grabbed the wrong folder); silently truncate and let
+# the UI show what made it in.
+_DROP_FILE_LIMIT = 1024
+
+
+def walk_floppy_images(path: str | Path) -> list[str]:
+    """Return floppy-image paths discovered at *path*.
+
+    - If *path* is a file with a recognized extension, returns it as a
+      single-element list.
+    - If *path* is a directory, walks it (up to ``_DROP_RECURSION_LIMIT``
+      levels) and returns every floppy image inside, sorted for
+      deterministic add-order.
+    - Otherwise returns an empty list.
+
+    Skips hidden files (``.foo``), dot-directories, and macOS
+    ``.AppleDouble`` / Windows ``$RECYCLE.BIN`` cruft so drops on
+    cloud-synced collections behave predictably.
+    """
+    p = Path(path)
+    if p.is_file():
+        return [str(p)] if p.suffix.lower() in ALL_ACCEPTED_EXTS else []
+    if not p.is_dir():
+        return []
+
+    skip_dir_names = {".AppleDouble", "$RECYCLE.BIN", "System Volume Information"}
+    results: list[str] = []
+
+    def _walk(d: Path, depth: int) -> None:
+        if depth > _DROP_RECURSION_LIMIT or len(results) >= _DROP_FILE_LIMIT:
+            return
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                if entry.name in skip_dir_names:
+                    continue
+                _walk(entry, depth + 1)
+                if len(results) >= _DROP_FILE_LIMIT:
+                    return
+            elif entry.is_file():
+                if entry.suffix.lower() in ALL_ACCEPTED_EXTS:
+                    results.append(str(entry))
+                    if len(results) >= _DROP_FILE_LIMIT:
+                        return
+
+    _walk(p, 0)
+    return results
+
+
 # Characters SYSLINUX/ISOLINUX can't tolerate in an APPEND path
 # (whitespace splits the kernel command line, '#' starts a comment, ';'
 # and ',' are field separators in some loaders). Replaced with '_' to

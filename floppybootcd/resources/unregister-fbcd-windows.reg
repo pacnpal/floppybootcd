@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+; Undo the file-association registered by register-fbcd-windows.reg.
+; Removes the per-user .fbcd handler from HKCU. Other applications
+; that have registered themselves for .fbcd in HKCU\Software\Classes
+; are left alone.
+;
+; The leading '-' on each key path tells regedit to delete the key
+; rather than create it.
+
+[-HKEY_CURRENT_USER\Software\Classes\.fbcd]
+
+[-HKEY_CURRENT_USER\Software\Classes\FloppyBootCD.Project]
