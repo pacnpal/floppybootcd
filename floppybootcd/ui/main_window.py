@@ -533,12 +533,20 @@ class MainWindow(QMainWindow):
         self._build_worker.moveToThread(self._build_thread)
 
         self._build_thread.started.connect(self._build_worker.run)
-        self._build_worker.progress.connect(self._on_progress)
-        self._build_worker.log.connect(self._append_log)
+        # GUI slots must run on the main thread — explicit QueuedConnection
+        # because PySide6 routes Python callables as direct callbacks otherwise,
+        # which causes QProgressBar.setValue() to repaint off the GUI thread.
+        self._build_worker.progress.connect(
+            self._on_progress, Qt.ConnectionType.QueuedConnection,
+        )
+        self._build_worker.log.connect(
+            self._append_log, Qt.ConnectionType.QueuedConnection,
+        )
         self._build_worker.finished.connect(
             lambda ok, err, iso: self._on_build_done(
                 ok, err, iso, then_burn, burn_backend,
-            )
+            ),
+            Qt.ConnectionType.QueuedConnection,
         )
 
         self.save_iso_btn.setEnabled(False)

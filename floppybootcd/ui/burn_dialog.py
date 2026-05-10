@@ -147,9 +147,18 @@ class BurnDialog(QDialog):
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(self._on_progress)
-        self._worker.log.connect(self._log)
-        self._worker.finished.connect(self._on_done)
+        # GUI slots must run on the main thread — explicit QueuedConnection
+        # because PySide6 routes Python callables as direct callbacks otherwise,
+        # which causes QProgressBar.setValue() to repaint off the GUI thread.
+        self._worker.progress.connect(
+            self._on_progress, Qt.ConnectionType.QueuedConnection,
+        )
+        self._worker.log.connect(
+            self._log, Qt.ConnectionType.QueuedConnection,
+        )
+        self._worker.finished.connect(
+            self._on_done, Qt.ConnectionType.QueuedConnection,
+        )
         self._thread.start()
 
     def _on_progress(self, message: str, fraction: float) -> None:
