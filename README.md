@@ -1,4 +1,4 @@
-<div align="center"><img src="./floppybootcd/resources/icon.png" alt="FloppyBootCD Icon" width="200" style="float: left; margin-right: 15px;"></div>
+<div align="center"><a href="http://floppybootcd.postbeep.net/"><img src="./floppybootcd/resources/icon.png" alt="FloppyBootCD Icon" width="200" style="float: left; margin-right: 15px;"></a></div>
 
 # FloppyBootCD
 
