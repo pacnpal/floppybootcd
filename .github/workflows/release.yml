@@ -14,10 +14,10 @@ on:
 permissions:
   contents: write
 
-# Opt into Node.js 24 for all JS-based actions (checkout, setup-python,
-# upload-artifact, download-artifact). Node.js 20 is deprecated as of
-# Sep 2026 and forced to Node.js 24 by default starting June 2026; we
-# enable it now to silence the deprecation warnings.
+# Belt-and-suspenders: even though we pin every JS-based action below
+# to a Node-24-native major (checkout v5, setup-python v6, upload/
+# download-artifact v6), force any transitive Node-20 action to Node 24
+# too. Node 20 is being removed from runners by September 2026.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -64,7 +64,7 @@ jobs:
           ./staging-xorriso/bin/xorriso.exe -version | head -3
 
       - name: Upload Windows xorriso bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: xorriso-windows-bundle
           path: staging-xorriso/
@@ -125,13 +125,13 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -189,7 +189,7 @@ jobs:
 
       - name: Download Windows xorriso bundle (from prep job)
         if: matrix.xorriso_method == 'windows-shared'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: xorriso-windows-bundle
           path: staging-xorriso/
@@ -332,7 +332,7 @@ jobs:
           Compress-Archive -Path floppybootcd -DestinationPath "floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.zip"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: floppybootcd-${{ matrix.label }}
           path: dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.${{ matrix.artifact_ext }}
@@ -346,7 +346,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: artifacts
           pattern: floppybootcd-*
