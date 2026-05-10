@@ -1,0 +1,123 @@
+name: Deploy GitHub Pages
+
+# Publishes the 90s-style landing page in docs/ to GitHub Pages.
+#
+# Triggers:
+#   - push to main when docs/ or this workflow change (deploys page edits)
+#   - release published (refreshes the page so its build-time release
+#     snapshot points at the newly published version; the page also
+#     fetches live release data client-side as a fallback)
+#   - manual dispatch
+#
+# Setup: in repo Settings -> Pages, set Source = "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time; let in-flight runs finish so a release
+# publish never gets cancelled by a follow-up docs push.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Fetch latest release metadata
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Pull the latest published (non-draft, non-prerelease) release.
+          # If there is none yet, fall back gracefully so the page still
+          # builds; the client-side fetch will fill in later.
+          if ! gh api "repos/${GITHUB_REPOSITORY}/releases/latest" \
+                 --header "Accept: application/vnd.github+json" \
+                 > release.json 2>/dev/null; then
+            echo "No published release yet — skipping injection."
+            echo "injected=false" >> "$GITHUB_OUTPUT"
+            echo "null" > release.json
+          else
+            echo "injected=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Inject release data into index.html
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, re
+
+          page = pathlib.Path("docs/index.html")
+          data = json.loads(pathlib.Path("release.json").read_text() or "null")
+
+          if data is None:
+              print("No release data — leaving placeholder null.")
+              raise SystemExit(0)
+
+          # Slim down to only the fields the page renders. Keeps the HTML
+          # small and avoids leaking unrelated API fields.
+          slim = {
+              "tag_name":     data.get("tag_name"),
+              "name":         data.get("name"),
+              "html_url":     data.get("html_url"),
+              "published_at": data.get("published_at"),
+              "assets": [
+                  {
+                      "name":                 a["name"],
+                      "browser_download_url": a["browser_download_url"],
+                      "size":                 a.get("size", 0),
+                  }
+                  for a in data.get("assets", [])
+              ],
+          }
+
+          src = page.read_text()
+          payload = json.dumps(slim, separators=(",", ":"))
+          new = re.sub(
+              r"/\*BUILD_DATA_START\*/.*?/\*BUILD_DATA_END\*/",
+              "/*BUILD_DATA_START*/" + payload + "/*BUILD_DATA_END*/",
+              src,
+              count=1,
+              flags=re.DOTALL,
+          )
+          if new == src:
+              raise SystemExit("BUILD_DATA marker not found in docs/index.html")
+          page.write_text(new)
+          print(f"Injected release {slim['tag_name']} ({len(slim['assets'])} assets).")
+          PY
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

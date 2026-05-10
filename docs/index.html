@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>~ FloppyBootCD :: The Official Homepage ~</title>
+<meta name="description" content="Build bootable CDs from floppy disk images. Like Ventoy, but for CDs and floppies.">
+<meta name="theme-color" content="#000080">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23000080'/%3E%3Crect x='2' y='1' width='12' height='14' fill='%23c0c0c0'/%3E%3Crect x='4' y='2' width='8' height='5' fill='%23000080'/%3E%3Crect x='5' y='9' width='6' height='5' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+  /* === RESET === */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  /* === BASE === */
+  body {
+    font-family: "Courier New", Courier, monospace;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,128,0.05) 0px, rgba(0,0,128,0.05) 1px, transparent 1px, transparent 3px),
+      #000080;
+    color: #ffffff;
+    line-height: 1.4;
+    min-height: 100vh;
+    padding: 8px;
+  }
+
+  a { color: #00ffff; }
+  a:visited { color: #ff80ff; }
+  a:hover { color: #ffff00; background: #ff0000; }
+
+  /* === MARQUEE WRAPPER (CSS-only fallback) === */
+  marquee {
+    color: #ffff00;
+    background: #800000;
+    border-top: 2px ridge #c0c0c0;
+    border-bottom: 2px ridge #c0c0c0;
+    padding: 4px 0;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+  }
+
+  /* === BLINK (browsers nuked it, so we polyfill) === */
+  .blink { animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+
+  .rainbow {
+    background-image: linear-gradient(90deg,
+      #ff0000, #ff8000, #ffff00, #00ff00, #00ffff, #0080ff, #8000ff, #ff00ff, #ff0000);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: rainbow 4s linear infinite;
+    font-weight: bold;
+  }
+  @keyframes rainbow { to { background-position: -200% 0; } }
+
+  /* === LAYOUT === */
+  .frame {
+    max-width: 920px;
+    margin: 0 auto;
+    background: #c0c0c0;
+    color: #000;
+    border: 4px outset #f0f0f0;
+    padding: 0;
+  }
+
+  .titlebar {
+    background: linear-gradient(90deg, #000080 0%, #1084d0 100%);
+    color: #fff;
+    padding: 4px 8px;
+    font-weight: bold;
+    border-bottom: 1px solid #000;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .titlebar .controls { font-family: "Courier New", monospace; }
+  .titlebar .controls span {
+    display: inline-block;
+    background: #c0c0c0;
+    color: #000;
+    border: 1px outset #fff;
+    padding: 0 6px;
+    margin-left: 2px;
+  }
+
+  .menubar {
+    background: #c0c0c0;
+    border-bottom: 1px solid #808080;
+    padding: 2px 6px;
+    font-size: 12px;
+  }
+  .menubar u { margin-right: 12px; cursor: default; }
+
+  .content {
+    padding: 16px;
+    background: #c0c0c0;
+  }
+
+  /* === HEADER ASCII LOGO === */
+  .logo {
+    text-align: center;
+    background: #000;
+    color: #00ff00;
+    padding: 14px 8px;
+    border: 2px inset #808080;
+    font-size: 11px;
+    line-height: 1.05;
+    white-space: pre;
+    overflow-x: auto;
+    margin-bottom: 14px;
+  }
+  .tagline {
+    text-align: center;
+    font-size: 14px;
+    margin-bottom: 12px;
+    color: #000;
+  }
+
+  /* === SECTION CARDS === */
+  .panel {
+    background: #fff;
+    border: 2px inset #c0c0c0;
+    padding: 12px;
+    margin: 12px 0;
+    color: #000;
+  }
+  .panel h2 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    background: linear-gradient(90deg, #000080, #1084d0);
+    color: #fff;
+    padding: 4px 8px;
+    border: 1px outset #fff;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .panel h3 {
+    margin: 12px 0 4px 0;
+    font-size: 13px;
+    color: #000080;
+    border-bottom: 1px dashed #808080;
+    padding-bottom: 2px;
+  }
+
+  /* === DOWNLOAD TABLE === */
+  table.dl {
+    width: 100%;
+    border-collapse: collapse;
+    background: #f0f0f0;
+    font-size: 13px;
+  }
+  table.dl th, table.dl td {
+    border: 1px solid #808080;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.dl th {
+    background: #000080;
+    color: #ffff00;
+    font-weight: bold;
+  }
+  table.dl tr:nth-child(even) td { background: #e0e0e0; }
+
+  .dl-button {
+    display: inline-block;
+    background: #c0c0c0;
+    border: 2px outset #fff;
+    color: #000;
+    padding: 4px 10px;
+    text-decoration: none;
+    font-weight: bold;
+    font-family: "Courier New", monospace;
+    white-space: nowrap;
+  }
+  .dl-button:hover { background: #ffff00; color: #000; }
+  .dl-button:active { border-style: inset; }
+  .dl-button:visited { color: #000; }
+
+  /* === NEW BADGE === */
+  .new {
+    display: inline-block;
+    background: #ff0000;
+    color: #ffff00;
+    font-weight: bold;
+    padding: 0 4px;
+    border: 1px outset #fff;
+    font-size: 11px;
+    margin-left: 4px;
+    animation: blink 1s steps(2,start) infinite;
+  }
+
+  /* === FLOPPY ICON === */
+  .floppy {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    background: #2222aa;
+    border: 1px solid #000;
+    position: relative;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+  .floppy::before {
+    content: "";
+    position: absolute;
+    top: 1px; left: 3px; right: 3px; height: 4px;
+    background: #c0c0c0;
+  }
+  .floppy::after {
+    content: "";
+    position: absolute;
+    bottom: 1px; left: 2px; right: 2px; height: 5px;
+    background: #fff;
+  }
+
+  /* === FOOTER === */
+  .footer {
+    text-align: center;
+    margin-top: 16px;
+    padding: 12px;
+    background: #000080;
+    color: #c0c0c0;
+    border: 2px ridge #808080;
+    font-size: 12px;
+  }
+  .footer a { color: #ffff00; }
+  .footer a:visited { color: #ff80ff; }
+
+  .counter {
+    display: inline-block;
+    background: #000;
+    color: #00ff00;
+    padding: 2px 6px;
+    border: 1px inset #c0c0c0;
+    letter-spacing: 0.2em;
+    font-weight: bold;
+  }
+
+  .webring {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .webring a {
+    background: #c0c0c0;
+    color: #000080;
+    padding: 2px 8px;
+    text-decoration: none;
+    border: 1px outset #fff;
+  }
+  .webring a:hover { background: #ffff00; }
+
+  /* === CODE BLOCKS === */
+  pre, code {
+    font-family: "Courier New", Courier, monospace;
+  }
+  pre {
+    background: #000;
+    color: #00ff00;
+    padding: 8px;
+    border: 1px inset #808080;
+    overflow-x: auto;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  code {
+    background: #ffff80;
+    color: #000;
+    padding: 0 3px;
+    border: 1px solid #808080;
+  }
+  pre code {
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 0;
+  }
+
+  /* === LISTS === */
+  ul.bullets { list-style: none; padding-left: 0; }
+  ul.bullets li::before {
+    content: ">> ";
+    color: #ff00ff;
+    font-weight: bold;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 4px;
+    background: repeating-linear-gradient(90deg,
+      #ff0000 0 8px, #ffff00 8px 16px, #00ff00 16px 24px,
+      #00ffff 24px 32px, #0000ff 32px 40px, #ff00ff 40px 48px);
+    margin: 16px 0;
+  }
+
+  .status {
+    background: #000;
+    color: #00ff00;
+    border: 1px inset #808080;
+    padding: 4px 8px;
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+  .status .label { color: #ffff00; }
+
+  /* === RESPONSIVE === */
+  @media (max-width: 640px) {
+    .logo { font-size: 7px; }
+    .titlebar { font-size: 12px; }
+    table.dl th, table.dl td { padding: 4px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<marquee scrollamount="6" behavior="scroll" direction="left">
+  *** WELCOME TO FLOPPYBOOTCD :: BUILD BOOTABLE CDs FROM FLOPPY IMAGES :: FREE / OPEN SOURCE / MIT LICENSED ::
+  WORKS ON DOS / WIN9x / EVERY INT 13h OS :: NOW WITH NATIVE ARM64 BUILDS :: TELL YOUR FRIENDS! ***
+</marquee>
+
+<div class="frame">
+
+  <div class="titlebar">
+    <span>&#9646;&#9646;  C:\WWW\FLOPPYBOOTCD\INDEX.HTM  &mdash;  Netscape Navigator</span>
+    <span class="controls"><span>_</span><span>&#9633;</span><span>X</span></span>
+  </div>
+
+  <div class="menubar">
+    <u>F</u>ile  <u>E</u>dit  <u>V</u>iew  <u>G</u>o  <u>B</u>ookmarks  <u>O</u>ptions  <u>D</u>irectory  <u>W</u>indow  <u>H</u>elp
+  </div>
+
+  <div class="content">
+
+    <pre class="logo" aria-label="FloppyBootCD ASCII logo">
+ _____ _                       ____              _    ____ ____
+|  ___| | ___  _ __  _ __  _   | __ )  ___   ___ | |_ / ___|  _ \
+| |_  | |/ _ \| '_ \| '_ \| | | |  _ \ / _ \ / _ \| __| |   | | | |
+|  _| | | (_) | |_) | |_) | |_| | |_) | (_) | (_) | |_| |___| |_| |
+|_|   |_|\___/| .__/| .__/ \__, |____/ \___/ \___/ \__|\____|____/
+              |_|   |_|    |___/    [+] floppy images -> bootable CDs
+    </pre>
+
+    <div class="tagline">
+      <span class="rainbow">~* Like Ventoy, but for CDs and floppies *~</span>
+    </div>
+
+    <div class="status">
+      <span class="label">STATUS:</span> Ready &nbsp;|&nbsp;
+      <span class="label">VERSION:</span> <span id="ver-status">loading...</span> &nbsp;|&nbsp;
+      <span class="label">DATE:</span> <span id="now-date"></span> &nbsp;|&nbsp;
+      <span class="blink">_</span>
+    </div>
+
+    <!-- ABOUT -->
+    <div class="panel">
+      <h2>[ About this Program ]</h2>
+      <p>
+        <strong>FloppyBootCD</strong> builds bootable CDs from collections of
+        floppy disk images for vintage computers. Drop in your
+        <code>.img</code> / <code>.ima</code> files, give each one a menu
+        label, hit Build, and get a CD that boots into a menu where you
+        pick which floppy to load.
+      </p>
+      <p>
+        Each image is loaded into RAM via <strong>MEMDISK</strong> and
+        presented to the OS as if it were sitting in a real floppy drive
+        &mdash; so DOS, Windows 9x, and other INT&nbsp;13h operating
+        systems boot exactly as they would from physical media.
+      </p>
+      <ul class="bullets">
+        <li>Cross-platform GUI (PySide6 / Qt6)</li>
+        <li>Bundled <code>xorriso</code> &mdash; no extra installs</li>
+        <li>ISOLINUX + MEMDISK boot menus</li>
+        <li>macOS / Windows / Linux &mdash; x86_64 and arm64</li>
+      </ul>
+    </div>
+
+    <!-- DOWNLOADS -->
+    <div class="panel">
+      <h2>[ Download Latest Release <span class="new">NEW!</span> ]</h2>
+
+      <p>
+        Pick the bundle that matches your machine. All bundles ship with
+        <code>xorriso</code> inside &mdash; no separate install needed.
+      </p>
+
+      <p>
+        Current release:
+        <strong><a id="release-link" href="https://github.com/pacnpal/floppybootcd/releases/latest" target="_blank" rel="noopener">
+          <span id="release-tag">latest</span>
+        </a></strong>
+        &nbsp;|&nbsp; Published: <span id="release-date">&mdash;</span>
+      </p>
+
+      <table class="dl" id="dl-table">
+        <thead>
+          <tr><th>Platform</th><th>Architecture</th><th>File</th><th>Download</th></tr>
+        </thead>
+        <tbody id="dl-body">
+          <tr><td colspan="4" style="text-align:center; padding:20px;">
+            <span class="blink">[ contacting GitHub ... ]</span>
+          </td></tr>
+        </tbody>
+      </table>
+
+      <p style="margin-top:10px; font-size:12px;">
+        <strong>Don't see your platform?</strong> 32-bit Windows, 32-bit
+        Linux, armhf, RISC-V and BSD aren't built yet (blocked on upstream
+        PySide6 wheels). Install from source with <code>uv</code> instead.
+      </p>
+    </div>
+
+    <!-- INSTALL -->
+    <div class="panel">
+      <h2>[ Installation in 30 Seconds ]</h2>
+
+      <h3>macOS</h3>
+      <pre><code>cd ~/Downloads
+unzip floppybootcd-*-macos-arm64.zip
+xattr -dr com.apple.quarantine floppybootcd.app
+mv floppybootcd.app /Applications/
+open /Applications/floppybootcd.app</code></pre>
+
+      <h3>Windows</h3>
+      <pre><code>Expand-Archive .\floppybootcd-*-windows-x86_64.zip -DestinationPath C:\Tools\
+C:\Tools\floppybootcd\floppybootcd.exe</code></pre>
+
+      <h3>Linux (incl. Raspberry Pi 3/4/5)</h3>
+      <pre><code>tar xzf floppybootcd-*-linux-x86_64.tar.gz
+cd floppybootcd
+./floppybootcd</code></pre>
+
+      <h3>Install from source (any platform)</h3>
+      <pre><code>uv tool install git+https://github.com/pacnpal/floppybootcd
+floppybootcd</code></pre>
+    </div>
+
+    <!-- SYSTEM REQS -->
+    <div class="panel">
+      <h2>[ System Requirements ]</h2>
+      <table class="dl">
+        <thead>
+          <tr><th>Bundle</th><th>Minimum OS</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>macOS arm64 / x86_64</td><td>macOS 13 (Ventura)</td></tr>
+          <tr><td>Windows x86_64</td><td>Windows 10 1809 (Oct 2018)</td></tr>
+          <tr><td>Windows arm64</td><td>Windows 11 22H2</td></tr>
+          <tr><td>Linux x86_64</td><td>glibc 2.34 (Ubuntu 22.04, Debian 12, RHEL 9)</td></tr>
+          <tr><td>Linux arm64</td><td>glibc 2.39 (Ubuntu 24.04, Debian 13, Fedora 40+)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- LINKS -->
+    <div class="panel">
+      <h2>[ Useful Links ]</h2>
+      <ul class="bullets">
+        <li><a href="https://github.com/pacnpal/floppybootcd">Source code on GitHub</a></li>
+        <li><a href="https://github.com/pacnpal/floppybootcd/releases">All releases</a></li>
+        <li><a href="https://github.com/pacnpal/floppybootcd/issues">Report a bug</a></li>
+        <li><a href="https://github.com/pacnpal/floppybootcd/blob/main/README.md">Full README</a></li>
+        <li><a href="https://github.com/pacnpal/floppybootcd/blob/main/LICENSE">MIT License</a></li>
+        <li><a href="https://wiki.syslinux.org/wiki/index.php?title=ISOLINUX">About ISOLINUX</a></li>
+      </ul>
+    </div>
+
+    <hr class="fancy">
+
+    <div class="footer">
+      <p>
+        <span class="blink">&#9733;</span>
+        This page best viewed in <strong>Netscape Navigator 4</strong> at <strong>800x600</strong>
+        <span class="blink">&#9733;</span>
+      </p>
+      <p>
+        You are visitor # <span class="counter" id="counter">00001337</span>
+        <br>since the dawn of time
+      </p>
+      <div class="webring">
+        <a href="https://github.com/pacnpal/floppybootcd">[ HOME ]</a>
+        <a href="https://github.com/pacnpal/floppybootcd/releases/latest">[ DOWNLOAD ]</a>
+        <a href="https://github.com/pacnpal/floppybootcd/issues">[ BUGS ]</a>
+        <a href="https://github.com/pacnpal/floppybootcd/blob/main/README.md">[ DOCS ]</a>
+        <a href="https://github.com/pacnpal/floppybootcd/blob/main/LICENSE">[ MIT ]</a>
+      </div>
+      <p style="margin-top:10px; font-size:11px;">
+        &copy; <span id="year"></span> pacnpal &middot; FloppyBootCD is MIT-licensed
+        &middot; bundled <code style="color:#ffff80;background:#000080;border-color:#fff;">xorriso</code> is GPLv3
+        <br>
+        <span class="rainbow">~ Hand-crafted with HTML and a 1.44MB diskette ~</span>
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Build-time injection: workflow may replace this with real release data.
+  // Fallback fetched live from GitHub if not pre-injected.
+  const PRELOADED = /*BUILD_DATA_START*/ null /*BUILD_DATA_END*/;
+  const REPO = "pacnpal/floppybootcd";
+
+  const PLATFORMS = [
+    { label: "macOS",   arch: "Apple Silicon",    match: /-macos-arm64\.zip$/ },
+    { label: "macOS",   arch: "Intel",            match: /-macos-x86_64\.zip$/ },
+    { label: "Windows", arch: "x86_64",           match: /-windows-x86_64\.zip$/ },
+    { label: "Windows", arch: "ARM64",            match: /-windows-arm64\.zip$/ },
+    { label: "Linux",   arch: "x86_64",           match: /-linux-x86_64\.tar\.gz$/ },
+    { label: "Linux",   arch: "ARM64 / Raspberry Pi", match: /-linux-arm64\.tar\.gz$/ },
+  ];
+
+  function fmtBytes(n) {
+    if (!n && n !== 0) return "";
+    if (n < 1024) return n + " B";
+    if (n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+    if (n < 1024*1024*1024) return (n/(1024*1024)).toFixed(1) + " MB";
+    return (n/(1024*1024*1024)).toFixed(2) + " GB";
+  }
+
+  function render(release) {
+    if (!release || !release.assets) { renderError(); return; }
+    document.getElementById("release-tag").textContent = release.tag_name || release.name || "latest";
+    document.getElementById("ver-status").textContent = (release.tag_name || "?").replace(/^v/, "v");
+    document.getElementById("release-link").href = release.html_url ||
+      ("https://github.com/" + REPO + "/releases/latest");
+    if (release.published_at) {
+      const d = new Date(release.published_at);
+      document.getElementById("release-date").textContent =
+        d.toISOString().slice(0,10);
+    }
+
+    const tbody = document.getElementById("dl-body");
+    tbody.innerHTML = "";
+    let any = false;
+    for (const p of PLATFORMS) {
+      const asset = release.assets.find(a => p.match.test(a.name));
+      const tr = document.createElement("tr");
+      const url = asset ? asset.browser_download_url
+                        : "https://github.com/" + REPO + "/releases/latest";
+      const file = asset ? asset.name : "(not in this release)";
+      const size = asset ? fmtBytes(asset.size) : "";
+      tr.innerHTML =
+        "<td><span class='floppy'></span>" + p.label + "</td>" +
+        "<td>" + p.arch + "</td>" +
+        "<td><code>" + file + "</code>" + (size ? " <small>(" + size + ")</small>" : "") + "</td>" +
+        "<td>" + (asset
+          ? "<a class='dl-button' href='" + url + "'>&#9660; GET IT</a>"
+          : "<a class='dl-button' href='" + url + "' style='opacity:0.6'>releases</a>") +
+        "</td>";
+      tbody.appendChild(tr);
+      if (asset) any = true;
+    }
+    if (!any) renderError();
+  }
+
+  function renderError() {
+    document.getElementById("dl-body").innerHTML =
+      "<tr><td colspan='4' style='text-align:center;padding:18px;'>" +
+      "Couldn't fetch release info. " +
+      "<a href='https://github.com/" + REPO + "/releases/latest'>Visit Releases page &raquo;</a>" +
+      "</td></tr>";
+    document.getElementById("ver-status").textContent = "see releases";
+  }
+
+  // Date stamps
+  const now = new Date();
+  document.getElementById("now-date").textContent =
+    now.toISOString().slice(0,10);
+  document.getElementById("year").textContent = now.getFullYear();
+
+  // Fake but stable visitor counter (hash of date)
+  const seed = now.getFullYear() * 366 + (Math.floor((now - new Date(now.getFullYear(),0,0)) / 86400000));
+  const visitor = String(1337 + (seed * 73 % 90000)).padStart(8, "0");
+  document.getElementById("counter").textContent = visitor;
+
+  // Render preloaded data first (zero-latency), then refresh from API if reachable.
+  if (PRELOADED) render(PRELOADED);
+
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest", {
+    headers: { "Accept": "application/vnd.github+json" }
+  })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+    .then(render)
+    .catch(() => { if (!PRELOADED) renderError(); });
+</script>
+
+</body>
+</html>
