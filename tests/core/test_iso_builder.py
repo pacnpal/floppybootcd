@@ -18,6 +18,36 @@ from floppybootcd.core.iso_builder import (
 from floppybootcd.core.project import FloppyImage, Project
 
 
+def _find_zip_header(
+    raw: bytearray,
+    signature: bytes,
+    fixed_size: int,
+    member_name: bytes,
+) -> int:
+    """Return the byte offset of the ZIP header (local file or central
+    directory) whose filename matches *member_name*. Scans every
+    occurrence of *signature* so the test doesn't accidentally patch
+    the wrong entry if the archive gains additional members.
+
+    *fixed_size* is the size of the fixed-width portion of the header
+    (30 for local file header, 46 for central directory file header) —
+    the filename immediately follows.
+    """
+    start = 0
+    while True:
+        i = raw.find(signature, start)
+        if i < 0:
+            raise AssertionError(
+                f"No header {signature!r} for {member_name!r} found"
+            )
+        # Filename is at offset fixed_size; its length is the last 2
+        # bytes before it... but for our purposes a prefix match is
+        # enough since we control both ends.
+        if raw[i + fixed_size : i + fixed_size + len(member_name)] == member_name:
+            return i
+        start = i + len(signature)
+
+
 class TestValidateProject:
     def test_empty_project_reports_no_images(self):
         problems = validate_project(Project())
@@ -93,23 +123,46 @@ class TestValidateProject:
         # resets the flag bits. Build a normal archive, then hex-patch
         # the encryption flag (bit 0 of the general-purpose flag) in
         # both the local file header and the central directory entry
-        # so ZipInfo.flag_bits reads back with bit 0 set.
+        # for the inner.ima entry so ZipInfo.flag_bits reads back with
+        # bit 0 set.
         f = tmp_path / "encrypted.imz"
+        member_name = b"inner.ima"
         with zipfile.ZipFile(f, "w") as zf:
-            zf.writestr("inner.ima", b"\0" * 32)
+            zf.writestr(member_name.decode(), b"\0" * 32)
         raw = bytearray(f.read_bytes())
-        # Local file header: PK\x03\x04 + version(2) + flag(2 @ off 6)
-        lfh = raw.index(b"PK\x03\x04")
+
+        # Locate the local file header for member_name. Layout:
+        #   PK\x03\x04 ver(2) flag(2@6) method(2) mtime(2) mdate(2)
+        #   crc(4)  compsize(4)  uncompsize(4)  namelen(2@26)  extralen(2@28)
+        #   filename ...
+        lfh = _find_zip_header(raw, b"PK\x03\x04", 30, member_name)
         raw[lfh + 6] |= 0x01
-        # Central directory file header: PK\x01\x02 + ver_made(2) +
-        # ver_needed(2) + flag(2 @ off 8)
-        cdh = raw.index(b"PK\x01\x02")
+
+        # Locate the central directory entry for member_name. Layout:
+        #   PK\x01\x02 vermade(2) verneeded(2) flag(2@8) method(2)
+        #   mtime(2) mdate(2) crc(4) compsize(4) uncompsize(4)
+        #   namelen(2@28) extralen(2@30) commentlen(2@32) ...
+        #   filename ...
+        cdh = _find_zip_header(raw, b"PK\x01\x02", 46, member_name)
         raw[cdh + 8] |= 0x01
         f.write_bytes(bytes(raw))
 
         p = Project(images=[FloppyImage(path=str(f))])
         problems = validate_project(p)
         assert any("encrypted" in s.lower() for s in problems)
+
+    def test_imz_with_empty_inner_image_reported(self, tmp_path):
+        # Archive opens fine and the inner member is readable, but the
+        # inner image is zero bytes — must be rejected, mirroring the
+        # raw-image empty check.
+        f = tmp_path / "empty_inner.imz"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr("inner.ima", b"")
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any(
+            "empty" in s.lower() and "inner" in s.lower() for s in problems
+        )
 
     def test_imz_without_floppy_member_reported(self, tmp_path):
         f = tmp_path / "nofloppy.imz"
