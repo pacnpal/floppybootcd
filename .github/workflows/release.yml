@@ -14,6 +14,13 @@ on:
 permissions:
   contents: write
 
+# Opt into Node.js 24 for all JS-based actions (checkout, setup-python,
+# upload-artifact, download-artifact). Node.js 20 is deprecated as of
+# Sep 2026 and forced to Node.js 24 by default starting June 2026; we
+# enable it now to silence the deprecation warnings.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
