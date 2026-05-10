@@ -255,6 +255,14 @@ jobs:
             Windows) ICON=floppybootcd/resources/icon.ico  ;;
             *)       ICON=floppybootcd/resources/icon.png  ;;
           esac
+          # We only use QtCore / QtGui / QtWidgets. --collect-all PySide6
+          # otherwise pulls in SQL drivers, QML, QtQuick, multimedia,
+          # WebEngine, 3D, etc. — all dead weight that bloats the bundle
+          # and triggers PyInstaller "Library not found" warnings when
+          # the Qt plugins reference system libs (Postgres.app, libiodbc,
+          # libmimerapi, QtQuickShapesDesignHelpers) that don't exist on
+          # the CI runner. Excluding them drops the bundle size noticeably
+          # and silences the spurious warnings.
           pyinstaller \
             --noconfirm \
             --clean \
@@ -263,6 +271,45 @@ jobs:
             --icon "$ICON" \
             --collect-all floppybootcd \
             --collect-all PySide6 \
+            --exclude-module PySide6.QtSql \
+            --exclude-module PySide6.QtQml \
+            --exclude-module PySide6.QtQmlModels \
+            --exclude-module PySide6.QtQmlWorkerScript \
+            --exclude-module PySide6.QtQuick \
+            --exclude-module PySide6.QtQuickControls2 \
+            --exclude-module PySide6.QtQuickWidgets \
+            --exclude-module PySide6.QtMultimedia \
+            --exclude-module PySide6.QtMultimediaWidgets \
+            --exclude-module PySide6.QtNetwork \
+            --exclude-module PySide6.QtBluetooth \
+            --exclude-module PySide6.QtPositioning \
+            --exclude-module PySide6.QtLocation \
+            --exclude-module PySide6.QtSensors \
+            --exclude-module PySide6.QtSerialPort \
+            --exclude-module PySide6.QtWebChannel \
+            --exclude-module PySide6.QtWebEngineCore \
+            --exclude-module PySide6.QtWebEngineWidgets \
+            --exclude-module PySide6.QtWebEngineQuick \
+            --exclude-module PySide6.QtWebSockets \
+            --exclude-module PySide6.Qt3DAnimation \
+            --exclude-module PySide6.Qt3DCore \
+            --exclude-module PySide6.Qt3DExtras \
+            --exclude-module PySide6.Qt3DInput \
+            --exclude-module PySide6.Qt3DLogic \
+            --exclude-module PySide6.Qt3DRender \
+            --exclude-module PySide6.QtCharts \
+            --exclude-module PySide6.QtDataVisualization \
+            --exclude-module PySide6.QtPdf \
+            --exclude-module PySide6.QtPdfWidgets \
+            --exclude-module PySide6.QtTextToSpeech \
+            --exclude-module PySide6.QtNfc \
+            --exclude-module PySide6.QtRemoteObjects \
+            --exclude-module PySide6.QtScxml \
+            --exclude-module PySide6.QtStateMachine \
+            --exclude-module PySide6.QtTest \
+            --exclude-module PySide6.QtHelp \
+            --exclude-module PySide6.QtDesigner \
+            --exclude-module PySide6.QtUiTools \
             floppybootcd/__main__.py
 
       - name: Bundle xorriso and license notices into PyInstaller output
