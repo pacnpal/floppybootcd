@@ -42,7 +42,7 @@ each OS work too. Older versions need [install from source](#install-from-source
 | `macos-x86_64` | macOS on Intel | **macOS 13 (Ventura)** | Built on macOS 15 (Intel) against the macOS 13.0 SDK |
 | `windows-x86_64` | Windows on Intel/AMD x86_64 | **Windows 10 1809** (Oct 2018) | Native build; runs on Windows 10, 11, Server 2019/2022/2025 |
 | `windows-arm64` | Windows on ARM (Surface Pro X / Surface Pro 9+ / Snapdragon X / Copilot+ PCs) | **Windows 11 22H2** | Native ARM64 PyInstaller bundle; the bundled xorriso is the x86_64 build, run via Windows 11's built-in x64 emulator |
-| `linux-x86_64` | Linux on Intel/AMD x86_64 | **glibc 2.34** (Ubuntu 22.04, Debian 12, RHEL/Rocky/Alma 9, Fedora 36+, Raspberry Pi OS Bookworm) | Built on Ubuntu 22.04 |
+| `linux-x86_64` | Linux on Intel/AMD x86_64 | **glibc 2.35** (Ubuntu 22.04, Debian 12, Fedora 36+, Raspberry Pi OS Bookworm) | Built on Ubuntu 22.04. RHEL/Rocky/Alma 9 ship glibc 2.34 and the prebuilt won't load — install from source via uv. |
 | `linux-arm64` | Linux on aarch64 — Raspberry Pi 3/4/5/CM3+/CM4/Zero 2 W (64-bit OS), AWS Graviton, Ampere Altra, Apple Silicon under Linux, etc. | **glibc 2.39** (Ubuntu 24.04, Debian 13 Trixie, Fedora 40+, RHEL 10) | Built on Ubuntu 24.04. PySide6's manylinux_2_39_aarch64 wheel pins this floor — for older ARM64 distros (Raspberry Pi OS Bookworm, glibc 2.36) install from source via uv (PySide6 comes from [piwheels](https://www.piwheels.org/)) |
 
 **Not yet supported:** 32-bit Windows (Win32), 32-bit Linux (i686 /
@@ -190,10 +190,11 @@ xorriso it needs, so no extra system installs are required on a
 desktop-flavored distro. glibc baselines differ by arch:
 
 - **`linux-x86_64`** is built on Ubuntu 22.04 → **glibc 2.35**. Covers
-  Debian 12 (Bookworm, glibc 2.36), Raspberry Pi OS Bookworm (2.36),
-  Ubuntu 22.04+ (2.35+), RHEL/Rocky/Alma 9 (2.34 — note: 9.0 may be
-  too old; 9.1+ tested), Fedora 36+ (2.35+), and most other modern
-  distros.
+  Ubuntu 22.04+ (2.35+), Debian 12 (Bookworm, 2.36), Raspberry Pi OS
+  Bookworm (2.36), Fedora 36+ (2.35+), and most other modern distros.
+  Does **not** cover RHEL/Rocky/Alma 9 (glibc 2.34) — install from
+  source via `uv` on that family. glibc is forward-compatible only,
+  so a binary linked against 2.35 won't load on 2.34.
 - **`linux-arm64`** is built on Ubuntu 24.04 → **glibc 2.39**. This
   floor is set by upstream PySide6's `manylinux_2_39_aarch64` wheel —
   the wheel won't install on older glibc, so we can't build against
@@ -457,8 +458,12 @@ above.
 
 ## What it does
 
-- Takes a list of floppy images (any common size, 360 KB through 2.88 MB
-  and beyond)
+- Takes a list of floppy images — raw `.img` / `.ima` / `.vfd` / `.flp`
+  in any common size (360 KB through 2.88 MB and beyond), plus
+  WinImage `.imz` ZIP-compressed images (extracted at build time)
+- Live **CD-R capacity meter** in the status bar — see the project's
+  total in MiB against the 700 MiB usable budget before you click
+  Build, with amber/red warnings as you approach or exceed the limit
 - Generates a boot menu (text or graphical) with one entry per image
 - Builds a bootable El Torito ISO 9660 disc image
 - Burns it to physical media using your platform's native CD burner:
@@ -640,15 +645,15 @@ floppybootcd
 FloppyBootCD uses `xorriso` to assemble the ISO.
 
 **If you downloaded a v1.1.0+ prebuilt binary**, xorriso is already
-inside the bundle for every platform *except Windows ARM64*. You don't
-need to install it separately. FloppyBootCD will prefer the bundled
-copy unless you point `xorriso_override` (in code) at a different one.
-xorriso ships under [GPLv3](LICENSE-xorriso); see
+inside the bundle for every platform — including Windows ARM64, which
+ships the x86_64 xorriso and runs it under Windows 11's built-in x64
+emulator. You don't need to install it separately. FloppyBootCD will
+prefer the bundled copy unless you point `xorriso_override` (in code)
+at a different one. xorriso ships under [GPLv3](LICENSE-xorriso); see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the upstream
 source link and the source-offer.
 
-**If you installed from source** (uv/pip), or if you're on Windows
-ARM64, install xorriso once:
+**If you installed from source** (uv/pip), install xorriso once:
 
 | Platform | Command |
 |----------|---------|
@@ -859,7 +864,7 @@ FloppyBootCD respects each OS's conventions:
 
 | Data | macOS | Windows | Linux |
 |------|-------|---------|-------|
-| Settings, window geometry, recent dirs (via `QSettings`) | `~/Library/Preferences/com.pacnpal.FloppyBootCD.plist` | Registry: `HKCU\Software\pacnpal\FloppyBootCD` | `~/.config/pacnpal/FloppyBootCD.conf` |
+| Settings, window geometry, recent dirs (via `QSettings`) | `~/Library/Preferences/floppybootcd.plist` (PyInstaller `.app`) or `~/Library/Preferences/al.pacnp.FloppyBootCD.plist` (uv/pip install) | Registry: `HKCU\Software\pacnpal\FloppyBootCD` | `~/.config/pacnpal/FloppyBootCD.conf` |
 | Cached syslinux | `~/Library/Caches/FloppyBootCD/syslinux/<ver>/` | `%LOCALAPPDATA%\FloppyBootCD\syslinux\<ver>\` | `~/.cache/FloppyBootCD/syslinux/<ver>/` |
 
 To wipe the syslinux cache: **Tools → Clear Syslinux Cache**.
@@ -1226,12 +1231,15 @@ Gatekeeper / SmartScreen workaround section. Signing requires paid
 developer accounts (Apple: $99/year, Windows EV cert: ~$300/year). On
 the table if there's enough demand to justify the cost.
 
-### AppImage and Flatpak for Linux
+### Flatpak / Snap for Linux
 
-The current Linux artifact is a tarball. AppImage would give us
-glibc-portability without needing the Ubuntu LTS baselines; Flatpak
-would give us first-class integration with software stores. Either is
-welcome as a contribution.
+Since v1.2.0, every Linux release ships **AppImage**, **`.deb`**,
+**`.rpm`**, and a raw **`.tar.gz`** for both x86_64 and arm64. That
+covers the vast majority of distros. **Flatpak** (cross-distro
+software store integration) and **Snap** (Canonical's universal
+format) are the remaining gaps. Both require publisher accounts and
+ongoing manifest maintenance — on the table if there's enough demand
+to justify the upkeep.
 
 ---
 
