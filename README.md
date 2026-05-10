@@ -1,3 +1,5 @@
+<div align="center"><img src="./floppybootcd/resources/icon.png" alt="FloppyBootCD Icon" width="200" style="float: left; margin-right: 15px;"></div>
+
 # FloppyBootCD
 
 [![Latest release](https://img.shields.io/github/v/release/pacnpal/floppybootcd?include_prereleases&sort=semver)](https://github.com/pacnpal/floppybootcd/releases/latest)
