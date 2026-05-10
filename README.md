@@ -14,7 +14,7 @@ Build bootable CDs from collections of floppy disk images for vintage
 computers. Like Ventoy, but for CDs and floppy images instead of USB sticks
 and ISOs.
 
-Drop in your `.img` / `.ima` / `.imz` files, give each one a menu label, hit Build,
+Drop in your `.img` / `.ima` / `.vfd` / `.flp` / `.imz` files, give each one a menu label, hit Build,
 and get a CD that boots into a menu where you pick which floppy to load.
 Each image is loaded into RAM via MEMDISK and presented to the OS as if it
 were sitting in a real floppy drive — so DOS, Windows 9x, and other INT 13h
