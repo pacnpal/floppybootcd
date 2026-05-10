@@ -16,7 +16,7 @@ from .. import APP_NAME, __version__
 from ..core import burner as burner_mod
 from ..core import iso_builder, syslinux_fetcher
 from ..core.bootloader import BUILTIN_BACKENDS, available_backends
-from ..core.project import FloppyImage, Project
+from ..core.project import PROJECT_EXT, FloppyImage, Project
 from .burn_dialog import BurnDialog
 from ..core import image_prep
 from ..core.image_prep import ALL_ACCEPTED_EXTS
@@ -353,7 +353,7 @@ class MainWindow(QMainWindow):
         # double-prompt on dirty projects.
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", str(Path.home()),
-            "FloppyBootCD Project (*.fbcd);;All files (*)",
+            f"FloppyBootCD Project (*{PROJECT_EXT});;All files (*)",
         )
         if path:
             self.open_project_path(path)
@@ -395,13 +395,13 @@ class MainWindow(QMainWindow):
 
     def _save_project_as(self) -> bool:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Project", str(Path.home() / "untitled.fbcd"),
-            "FloppyBootCD Project (*.fbcd)",
+            self, "Save Project", str(Path.home() / f"untitled{PROJECT_EXT}"),
+            f"FloppyBootCD Project (*{PROJECT_EXT})",
         )
         if not path:
             return False
-        if not path.lower().endswith(".fbcd"):
-            path += ".fbcd"
+        if not path.lower().endswith(PROJECT_EXT):
+            path += PROJECT_EXT
         self.project_path = Path(path)
         return self._save_project()
 
@@ -795,6 +795,14 @@ class MainWindow(QMainWindow):
         if floppy_paths:
             self._add_paths(floppy_paths)
             e.acceptProposedAction()
+            return
+        # URLs were present but none were recognized (e.g. a .txt
+        # dragged onto the window). dragEnterEvent already accepted
+        # the drag, so an implicit fall-through would leave the cursor
+        # showing the "accept" icon for an op that does nothing. Call
+        # e.ignore() so the OS reverts to the normal "drop rejected"
+        # cursor and any chained drop handlers get a fair shot.
+        e.ignore()
 
     # ── Geometry persistence ─────────────────────────────────────────────────────────
 

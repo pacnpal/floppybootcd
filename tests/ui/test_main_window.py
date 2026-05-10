@@ -128,6 +128,81 @@ class TestProjectIO:
         assert win._dirty is True
 
 
+class TestOpenProjectPath:
+    """open_project_path() is the public shared entry point used by
+    drag-and-drop, the OS file-association handler (QFileOpenEvent /
+    Explorer double-click / xdg-open) and the File → Open menu. The
+    tests below lock its load / prompt / error contract in."""
+
+    def test_open_project_path_loads_state(self, win, tmp_path):
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"\0" * 1024)
+        p = Project(
+            title="Dropped Project",
+            images=[FloppyImage(path=str(f), label="Boot", default=True)],
+            timeout_secs=20,
+        )
+        out = tmp_path / "dropped.fbcd"
+        p.save(out)
+
+        win.open_project_path(str(out))
+
+        assert win.project.title == "Dropped Project"
+        assert win.project_path == out
+        assert win.title_edit.text() == "Dropped Project"
+        assert win.timeout_spin.value() == 20
+        assert win.list_widget.count() == 1
+        # Freshly loaded — not dirty.
+        assert win._dirty is False
+
+    def test_open_project_path_prompts_save_when_dirty(self, win, tmp_path, monkeypatch):
+        """If the current project is dirty, the unsaved-changes prompt
+        must run before load. Returning False from _maybe_save() must
+        abort the load entirely (no project replacement)."""
+        # Make the window dirty.
+        original = win.project
+        win._dirty = True
+
+        # _maybe_save → False = "user clicked Cancel"
+        called = {"n": 0}
+        def fake_maybe_save():
+            called["n"] += 1
+            return False
+        monkeypatch.setattr(win, "_maybe_save", fake_maybe_save)
+
+        # Create a valid .fbcd to "try" to open. Won't get loaded.
+        p = Project(title="Should Not Load", images=[])
+        out = tmp_path / "x.fbcd"
+        p.save(out)
+
+        win.open_project_path(str(out))
+
+        assert called["n"] == 1
+        # Original project untouched.
+        assert win.project is original
+        assert win.project.title != "Should Not Load"
+
+    def test_open_project_path_shows_error_on_failure(self, win, tmp_path, monkeypatch):
+        """A corrupt / missing .fbcd surfaces a QMessageBox.critical
+        and leaves the current project alone."""
+        # Capture the critical() call without spawning a real dialog.
+        seen = {}
+        def fake_critical(parent, title, message):
+            seen["title"] = title
+            seen["message"] = message
+
+        import floppybootcd.ui.main_window as mw_mod
+        monkeypatch.setattr(mw_mod.QMessageBox, "critical", fake_critical)
+
+        # A nonexistent path → Project.load() raises FileNotFoundError.
+        original = win.project
+        win.open_project_path(str(tmp_path / "does-not-exist.fbcd"))
+
+        assert "Open failed" in seen.get("title", "")
+        # The project the user was working on is preserved.
+        assert win.project is original
+
+
 class TestReloadDoesNotMarkDirty:
     """Regression: programmatic widget setters in _reload_from_project()
     used to fire textChanged / currentIndexChanged / valueChanged, which
