@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSettings, QThread, Qt, Signal
+from PySide6.QtCore import QObject, QSettings, QThread, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
@@ -32,6 +32,7 @@ class _BuildWorker(QObject):
         self.project = project
         self.options = options
 
+    @Slot()
     def run(self) -> None:
         try:
             result = iso_builder.build(
@@ -532,10 +533,14 @@ class MainWindow(QMainWindow):
         self._build_worker = _BuildWorker(self.project, options)
         self._build_worker.moveToThread(self._build_thread)
 
+        # Stash dispatch params for the @Slot-decorated finish handler. A bare
+        # lambda or undecorated Python callable would get treated as a generic
+        # CallbackDynamicSlot and queued onto the *worker* thread, not the GUI
+        # thread — so the slots below are real @Slot methods on `self`.
+        self._build_then_burn = then_burn
+        self._build_burn_backend = burn_backend
+
         self._build_thread.started.connect(self._build_worker.run)
-        # GUI slots must run on the main thread — explicit QueuedConnection
-        # because PySide6 routes Python callables as direct callbacks otherwise,
-        # which causes QProgressBar.setValue() to repaint off the GUI thread.
         self._build_worker.progress.connect(
             self._on_progress, Qt.ConnectionType.QueuedConnection,
         )
@@ -543,10 +548,7 @@ class MainWindow(QMainWindow):
             self._append_log, Qt.ConnectionType.QueuedConnection,
         )
         self._build_worker.finished.connect(
-            lambda ok, err, iso: self._on_build_done(
-                ok, err, iso, then_burn, burn_backend,
-            ),
-            Qt.ConnectionType.QueuedConnection,
+            self._on_build_done_dispatch, Qt.ConnectionType.QueuedConnection,
         )
 
         self.save_iso_btn.setEnabled(False)
@@ -555,6 +557,7 @@ class MainWindow(QMainWindow):
         self._append_log(f"=== Building {output_path} ===")
         self._build_thread.start()
 
+    @Slot(str, float)
     def _on_progress(self, message: str, fraction: float) -> None:
         if fraction < 0:
             self.progress_bar.setRange(0, 0)
@@ -563,8 +566,16 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(int(fraction * 100))
         self.statusBar().showMessage(message)
 
+    @Slot(str)
     def _append_log(self, line: str) -> None:
         self.log_view.appendPlainText(line)
+
+    @Slot(bool, str, str)
+    def _on_build_done_dispatch(self, success: bool, error: str, iso_path: str) -> None:
+        self._on_build_done(
+            success, error, iso_path,
+            self._build_then_burn, self._build_burn_backend,
+        )
 
     def _on_build_done(self, success: bool, error: str, iso_path: str,
                        then_burn: bool,

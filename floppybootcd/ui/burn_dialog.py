@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton,
@@ -27,6 +27,7 @@ class _BurnWorker(QObject):
         self.verify = verify
         self.eject = eject
 
+    @Slot()
     def run(self) -> None:
         try:
             self.backend.burn(
@@ -161,6 +162,7 @@ class BurnDialog(QDialog):
         )
         self._thread.start()
 
+    @Slot(str, float)
     def _on_progress(self, message: str, fraction: float) -> None:
         if fraction < 0:
             self.progress_bar.setRange(0, 0)
@@ -169,9 +171,11 @@ class BurnDialog(QDialog):
             self.progress_bar.setValue(int(fraction * 100))
         self.status_label.setText(message)
 
+    @Slot(str)
     def _log(self, line: str) -> None:
         self.log_view.appendPlainText(line)
 
+    @Slot(bool, str)
     def _on_done(self, success: bool, error: str) -> None:
         if self._thread:
             self._thread.quit()
