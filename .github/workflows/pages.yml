@@ -89,10 +89,17 @@ jobs:
           }
 
           src = page.read_text()
-          payload = json.dumps(slim, separators=(",", ":"))
+          # ensure_ascii=False so non-ASCII chars (em-dashes in release names,
+          # smart quotes) stay literal — otherwise json.dumps emits \uXXXX
+          # escapes that re.sub interprets as regex replacement templates and
+          # explodes with 'bad escape \u'.
+          payload = json.dumps(slim, separators=(",", ":"), ensure_ascii=False)
+          replacement = "/*BUILD_DATA_START*/" + payload + "/*BUILD_DATA_END*/"
+          # Pass replacement as a lambda to bypass re.sub's template parsing
+          # entirely — belt-and-suspenders against future escape characters.
           new = re.sub(
               r"/\*BUILD_DATA_START\*/.*?/\*BUILD_DATA_END\*/",
-              "/*BUILD_DATA_START*/" + payload + "/*BUILD_DATA_END*/",
+              lambda _m: replacement,
               src,
               count=1,
               flags=re.DOTALL,
