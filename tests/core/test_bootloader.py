@@ -1,6 +1,7 @@
 """Tests for ISOLINUX bootloader staging and config generation."""
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -297,6 +298,60 @@ class TestStageDedup:
         assert result.boot_image_relpath == "isolinux/isolinux.bin"
         assert result.boot_catalog_relpath == "isolinux/boot.cat"
         assert "-no-emul-boot" in result.extra_xorriso_args
+
+    def test_imz_source_extracted_and_renamed_to_ima(self, tmp_path, monkeypatch):
+        sl_dir = self._stub_syslinux_dir(tmp_path)
+        monkeypatch.setattr(
+            syslinux_fetcher, "fetch_syslinux",
+            lambda version, progress=None: sl_dir,
+        )
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        imz = src_dir / "MSDOS622.imz"
+        inner = b"\x55\xaa" + b"BOOT" * 100
+        with zipfile.ZipFile(imz, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("MSDOS622.ima", inner)
+
+        project = Project(images=[FloppyImage(path=str(imz))])
+        iso_root = tmp_path / "iso"
+        iso_root.mkdir()
+        IsolinuxBackend().stage(project, iso_root)
+
+        staged = iso_root / "images" / "MSDOS622.ima"
+        assert staged.is_file()
+        assert staged.read_bytes() == inner
+        assert not (iso_root / "images" / "MSDOS622.imz").exists()
+
+        cfg = (iso_root / "isolinux" / "isolinux.cfg").read_text()
+        assert "APPEND initrd=/images/MSDOS622.ima" in cfg
+        assert "initrd=/images/MSDOS622.imz" not in cfg
+
+    def test_imz_collides_with_ima_gets_renamed(self, tmp_path, monkeypatch):
+        sl_dir = self._stub_syslinux_dir(tmp_path)
+        monkeypatch.setattr(
+            syslinux_fetcher, "fetch_syslinux",
+            lambda version, progress=None: sl_dir,
+        )
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        ima = src_dir / "boot.ima"
+        ima.write_bytes(b"raw")
+        imz = src_dir / "boot.imz"
+        with zipfile.ZipFile(imz, "w") as zf:
+            zf.writestr("boot.ima", b"compressed")
+
+        project = Project(images=[
+            FloppyImage(path=str(ima)),
+            FloppyImage(path=str(imz)),
+        ])
+        iso_root = tmp_path / "iso"
+        iso_root.mkdir()
+        IsolinuxBackend().stage(project, iso_root)
+
+        names = sorted(p.name for p in (iso_root / "images").iterdir())
+        assert names == ["boot.ima", "boot_1.ima"]
+        assert (iso_root / "images" / "boot.ima").read_bytes() == b"raw"
+        assert (iso_root / "images" / "boot_1.ima").read_bytes() == b"compressed"
 
     def test_stage_copies_background_image_when_vesa(self, tmp_path, monkeypatch):
         sl_dir = self._stub_syslinux_dir(tmp_path)

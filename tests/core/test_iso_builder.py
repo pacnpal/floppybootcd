@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -72,6 +73,31 @@ class TestValidateProject:
             images=[FloppyImage(path=str(f))],
         )
         assert validate_project(p) == []
+
+    def test_valid_imz_no_problems(self, tmp_path):
+        f = tmp_path / "boot.imz"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr("boot.ima", b"\0" * 1024)
+        p = Project(images=[FloppyImage(path=str(f))])
+        assert validate_project(p) == []
+
+    def test_corrupt_imz_reported(self, tmp_path):
+        f = tmp_path / "broken.imz"
+        f.write_bytes(b"this is not a zip")
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("not a ZIP-format .imz" in s for s in problems)
+
+    def test_oversized_imz_inner_image_warned(self, tmp_path):
+        # Highly compressible inner image: tiny on disk, huge inflated.
+        f = tmp_path / "huge.imz"
+        with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inner.ima", b"\0" * (51 * 1024 * 1024))
+        # Sanity: the .imz on disk is *not* >50 MiB — only the inner is.
+        assert f.stat().st_size < 50 * 1024 * 1024
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("unusually large" in s for s in problems)
 
     def test_text_menu_ignores_background(self, tmp_path):
         f = tmp_path / "ok.img"

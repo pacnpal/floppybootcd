@@ -14,7 +14,7 @@ Build bootable CDs from collections of floppy disk images for vintage
 computers. Like Ventoy, but for CDs and floppy images instead of USB sticks
 and ISOs.
 
-Drop in your `.img` / `.ima` files, give each one a menu label, hit Build,
+Drop in your `.img` / `.ima` / `.imz` files, give each one a menu label, hit Build,
 and get a CD that boots into a menu where you pick which floppy to load.
 Each image is loaded into RAM via MEMDISK and presented to the OS as if it
 were sitting in a real floppy drive — so DOS, Windows 9x, and other INT 13h
@@ -577,9 +577,11 @@ Three ways:
   (Ctrl/Cmd+I)
 - **Open a saved `.fbcd` project file**
 
-Recognized extensions: `.img`, `.ima`, `.vfd`, `.flp`. Files outside this
-list are ignored on drag-drop. The "Add Images..." dialog defaults to
-showing only floppy images but offers an "All files" filter if you need it.
+Recognized extensions: `.img`, `.ima`, `.vfd`, `.flp`, and `.imz`
+(WinImage compressed images, ZIP-format — extracted automatically at
+build time). Files outside this list are ignored on drag-drop. The
+"Add Images..." dialog defaults to showing only floppy images but
+offers an "All files" filter if you need it.
 
 Duplicate paths are silently skipped — adding the same image twice does
 nothing rather than producing a confusing duplicate entry.

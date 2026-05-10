@@ -18,7 +18,8 @@ from ..core import iso_builder, syslinux_fetcher
 from ..core.bootloader import BUILTIN_BACKENDS, available_backends
 from ..core.project import FloppyImage, Project
 from .burn_dialog import BurnDialog
-from .image_list import FLOPPY_EXTS, ImageListWidget
+from ..core.image_prep import ALL_ACCEPTED_EXTS
+from .image_list import ImageListWidget
 
 
 class _BuildWorker(QObject):
@@ -403,7 +404,7 @@ class MainWindow(QMainWindow):
 
     def _add_images(self) -> None:
         last_dir = self.settings.value("last_image_dir", str(Path.home()))
-        exts = " ".join(f"*{e}" for e in sorted(FLOPPY_EXTS))
+        exts = " ".join(f"*{e}" for e in sorted(ALL_ACCEPTED_EXTS))
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Add Floppy Images", last_dir,
             f"Floppy images ({exts});;All files (*)",
@@ -642,7 +643,7 @@ class MainWindow(QMainWindow):
             for url in e.mimeData().urls():
                 if url.isLocalFile():
                     p = url.toLocalFile()
-                    if Path(p).suffix.lower() in FLOPPY_EXTS and Path(p).is_file():
+                    if Path(p).suffix.lower() in ALL_ACCEPTED_EXTS and Path(p).is_file():
                         paths.append(p)
             if paths:
                 self._add_paths(paths)

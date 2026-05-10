@@ -7,10 +7,12 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 
+from ..core.image_prep import (
+    ALL_ACCEPTED_EXTS,
+    FLOPPY_EXTS,
+    probe_uncompressed_size,
+)
 from ..core.project import FloppyImage
-
-
-FLOPPY_EXTS = {".img", ".ima", ".vfd", ".flp"}
 
 
 class ImageListWidget(QListWidget):
@@ -69,7 +71,7 @@ class ImageListWidget(QListWidget):
                 if url.isLocalFile():
                     p = url.toLocalFile()
                     ext = Path(p).suffix.lower()
-                    if Path(p).is_file() and ext in FLOPPY_EXTS:
+                    if Path(p).is_file() and ext in ALL_ACCEPTED_EXTS:
                         paths.append(p)
             if paths:
                 self.files_dropped.emit(paths)
@@ -123,7 +125,10 @@ class ImageListWidget(QListWidget):
 
     @staticmethod
     def _format_label(img: FloppyImage) -> str:
-        kb = img.size_bytes // 1024
+        # Show the floppy's real (uncompressed) size for .imz containers
+        # so the column reflects what the OS will see, not the archive.
+        size_bytes = probe_uncompressed_size(img.path) or img.size_bytes
+        kb = size_bytes // 1024
         size_str = f"{kb} KB" if kb < 4096 else f"{kb / 1024:.1f} MB"
         prefix = "★ " if img.default else "   "
         label = img.display_label

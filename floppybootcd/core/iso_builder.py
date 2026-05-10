@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from .project import Project
-from . import bootloader
+from . import bootloader, image_prep
 
 
 def find_xorriso(override: str = "") -> str | None:
@@ -78,11 +78,26 @@ def validate_project(project: Project) -> list[str]:
         size = p.stat().st_size
         if size == 0:
             problems.append(f"Image {i} ({p.name}) is empty.")
+            continue
+        if image_prep.is_compressed(p):
+            inner_size = image_prep.probe_uncompressed_size(p)
+            if inner_size == 0:
+                problems.append(
+                    f"Image {i} ({p.name}): not a ZIP-format .imz, or "
+                    "contains no recognizable floppy image. Re-save it "
+                    "from WinImage as 'Compressed image file' or extract "
+                    "the .ima first."
+                )
+                continue
+            effective_size = inner_size
+        else:
+            effective_size = size
         # Floppy images aren't strictly required to be 1.44/2.88, but warn on
         # totally absurd sizes.
-        if size > 50 * 1024 * 1024:
+        if effective_size > 50 * 1024 * 1024:
             problems.append(
-                f"Image {i} ({p.name}) is {size // (1024*1024)} MiB which is "
+                f"Image {i} ({p.name}) is "
+                f"{effective_size // (1024*1024)} MiB which is "
                 "unusually large for a floppy image. memdisk supports it but "
                 "boot times may be very long."
             )
