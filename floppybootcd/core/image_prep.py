@@ -225,10 +225,22 @@ def _imz_inner_size_cached(path_str: str, mtime_ns: int, size: int) -> int:
     """Read the uncompressed inner-image size out of an ``.imz`` ZIP
     central directory. Cached on (path, mtime, on-disk size) so the UI
     can call this on every refresh without re-opening the archive.
+
+    Returns 0 for any condition that the UI should render as "invalid":
+    not a ZIP, no recognizable floppy member, or the chosen member is
+    flagged as encrypted (which would block extraction at build time).
+    Callers needing a structured reason should use
+    :func:`verify_imz_readable` instead.
     """
     try:
         with _open_imz(Path(path_str)) as zf:
-            return _pick_inner_member(zf, Path(path_str).name).file_size
+            member = _pick_inner_member(zf, Path(path_str).name)
+            if member.flag_bits & 0x1:
+                # Encrypted member — central directory still has a
+                # plausible file_size, but the UI must not present it
+                # as a valid floppy size.
+                return 0
+            return member.file_size
     except (OSError, ValueError, zipfile.BadZipFile):
         return 0
 

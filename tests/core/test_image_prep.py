@@ -141,6 +141,21 @@ class TestProbeUncompressedSize:
         src.write_bytes(b"definitely not zip")
         assert image_prep.probe_uncompressed_size(src) == 0
 
+    def test_encrypted_imz_returns_zero(self, tmp_path):
+        # Build a normal archive then hex-patch the encryption flag
+        # in both headers (stdlib zipfile resets flag_bits on writestr,
+        # so we have to set them after the fact). probe_uncompressed_size
+        # must report 0 for encrypted members so the UI flags them as
+        # invalid rather than displaying the central-directory size.
+        src = tmp_path / "encrypted.imz"
+        with zipfile.ZipFile(src, "w") as zf:
+            zf.writestr("inner.ima", b"\0" * 32)
+        raw = bytearray(src.read_bytes())
+        raw[raw.index(b"PK\x03\x04") + 6] |= 0x01  # local file header flag
+        raw[raw.index(b"PK\x01\x02") + 8] |= 0x01  # central directory flag
+        src.write_bytes(bytes(raw))
+        assert image_prep.probe_uncompressed_size(src) == 0
+
     def test_imz_without_floppy_member_returns_zero(self, tmp_path):
         src = tmp_path / "empty.imz"
         with zipfile.ZipFile(src, "w") as zf:
