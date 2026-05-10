@@ -51,11 +51,9 @@ class TestImageListWidget:
         assert widget.count() == 1
 
     def test_format_label_includes_size_kb(self):
-        # 2048 KB -> shown as KB (under 4096 cutoff)
+        # Non-existent file → size_bytes returns 0, formatter shows "0 KB".
         img = FloppyImage(path="/x/a.img")
-        # Stub size: not real file, just call the static method
         text = ImageListWidget._format_label(img)
-        # 0 KB since file doesn't exist
         assert "0 KB" in text
         assert "a.img" in text
 

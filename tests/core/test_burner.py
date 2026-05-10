@@ -159,7 +159,7 @@ class TestLinuxBurnerFindTool:
             burner_mod.shutil, "which",
             lambda name: "/usr/bin/wodim" if name == "wodim" else None,
         )
-        tool, path = LinuxBurner()._find_tool()
+        tool, _path = LinuxBurner()._find_tool()
         assert tool == "wodim"
 
     def test_find_tool_raises_when_none(self, monkeypatch):

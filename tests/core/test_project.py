@@ -80,7 +80,7 @@ class TestProjectSerialization:
         p = Project.from_dict(d)
         assert p.title == "Future"
 
-    def test_from_dict_ignores_unknown_image_keys_raises(self):
+    def test_from_dict_raises_on_unknown_image_keys(self):
         """FloppyImage uses **kwargs unpack so unknown keys WILL raise. That's
         the documented contract for image entries — only the project-level
         dict is forward-compat. This test pins the current behavior."""
