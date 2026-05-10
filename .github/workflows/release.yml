@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag name to build (e.g. v0.1.0). Leave blank for a dry-run build that does not publish to a release."
+        description: "Existing tag to check out for a smoke-test build (e.g. v0.1.0). Leave blank to build the dispatch ref. Manual runs NEVER publish to a Release; only pushed v* tags do."
         required: false
         default: ""
 
@@ -29,10 +29,10 @@ jobs:
           - os: ubuntu-latest
             label: linux-x86_64
             artifact_ext: tar.gz
-          - os: macos-13
+          - os: macos-15-intel
             label: macos-x86_64
             artifact_ext: zip
-          - os: macos-14
+          - os: macos-15
             label: macos-arm64
             artifact_ext: zip
           - os: windows-latest
@@ -42,6 +42,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
