@@ -80,16 +80,11 @@ def validate_project(project: Project) -> list[str]:
             problems.append(f"Image {i} ({p.name}) is empty.")
             continue
         if image_prep.is_compressed(p):
-            inner_size = image_prep.probe_uncompressed_size(p)
-            if inner_size == 0:
-                problems.append(
-                    f"Image {i} ({p.name}): not a ZIP-format .imz, or "
-                    "contains no recognizable floppy image. Re-save it "
-                    "from WinImage as 'Compressed image file' or extract "
-                    "the .ima first."
-                )
+            err = image_prep.verify_imz_readable(p)
+            if err is not None:
+                problems.append(f"Image {i} ({p.name}): {err}")
                 continue
-            effective_size = inner_size
+            effective_size = image_prep.probe_uncompressed_size(p)
         else:
             effective_size = size
         # Floppy images aren't strictly required to be 1.44/2.88, but warn on

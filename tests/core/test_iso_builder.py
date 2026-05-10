@@ -88,6 +88,37 @@ class TestValidateProject:
         problems = validate_project(p)
         assert any("not a ZIP-format .imz" in s for s in problems)
 
+    def test_encrypted_imz_reported_at_validation(self, tmp_path):
+        # stdlib zipfile can't write encrypted archives, and writestr
+        # resets the flag bits. Build a normal archive, then hex-patch
+        # the encryption flag (bit 0 of the general-purpose flag) in
+        # both the local file header and the central directory entry
+        # so ZipInfo.flag_bits reads back with bit 0 set.
+        f = tmp_path / "encrypted.imz"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr("inner.ima", b"\0" * 32)
+        raw = bytearray(f.read_bytes())
+        # Local file header: PK\x03\x04 + version(2) + flag(2 @ off 6)
+        lfh = raw.index(b"PK\x03\x04")
+        raw[lfh + 6] |= 0x01
+        # Central directory file header: PK\x01\x02 + ver_made(2) +
+        # ver_needed(2) + flag(2 @ off 8)
+        cdh = raw.index(b"PK\x01\x02")
+        raw[cdh + 8] |= 0x01
+        f.write_bytes(bytes(raw))
+
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("encrypted" in s.lower() for s in problems)
+
+    def test_imz_without_floppy_member_reported(self, tmp_path):
+        f = tmp_path / "nofloppy.imz"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr("readme.txt", b"hello")
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("no floppy image" in s for s in problems)
+
     def test_oversized_imz_inner_image_warned(self, tmp_path):
         # Highly compressible inner image: tiny on disk, huge inflated.
         # Stream from a sparse file so we don't allocate 51 MiB in RAM.

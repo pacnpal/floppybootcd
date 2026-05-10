@@ -84,6 +84,48 @@ def _pick_inner_member(zf: zipfile.ZipFile, src_name: str) -> zipfile.ZipInfo:
     return candidates[0]
 
 
+def verify_imz_readable(path: str | Path) -> str | None:
+    """Return None if *path* is a fully readable ``.imz`` we can stage.
+
+    Otherwise return a user-facing error string explaining why. This
+    goes beyond ``probe_uncompressed_size`` (which only reads the ZIP
+    central directory) by checking the inner member's encryption flag
+    and attempting a small read so the build doesn't fail mid-stage on
+    encrypted / password-protected archives or unsupported compression
+    methods.
+    """
+    p = Path(path)
+    try:
+        with _open_imz(p) as zf:
+            member = _pick_inner_member(zf, p.name)
+            # Bit 0 of the general-purpose flag is the encryption flag.
+            if member.flag_bits & 0x1:
+                return (
+                    f"{p.name}: inner image is encrypted "
+                    "(password-protected). Re-save it from WinImage "
+                    "without a password, or extract the .ima first."
+                )
+            # Attempt a small read to surface unsupported compression
+            # methods (NotImplementedError) and CRC issues now rather
+            # than during the build.
+            with zf.open(member) as fh:
+                fh.read(1)
+    except ValueError as e:
+        return str(e)
+    except (
+        zipfile.BadZipFile,
+        OSError,
+        RuntimeError,
+        NotImplementedError,
+    ) as e:
+        return (
+            f"{p.name}: failed to read .imz ({e}). Re-save it from "
+            "WinImage as 'Compressed image file' or extract the .ima "
+            "first."
+        )
+    return None
+
+
 def stage_image(src: str | Path, dest_dir: str | Path, dest_name: str) -> Path:
     """Place the raw floppy image for *src* at ``dest_dir/dest_name``.
 
