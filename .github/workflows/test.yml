@@ -1,0 +1,92 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+    env:
+      # PySide6 / Qt: run headless via the offscreen platform plugin so no
+      # X server / Wayland / display is required on any runner.
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # Linux runners need a handful of shared libs for Qt — the offscreen
+      # platform plugin still pulls in EGL, dbus, xkbcommon, fontconfig, etc.
+      - name: Install Qt runtime deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            libdbus-1-3 \
+            libfontconfig1 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xinerama0 \
+            libxcb-xkb1 \
+            libgl1
+
+      - name: Install package and test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Run tests with coverage
+        # Pin bash so the backslash line-continuations below work on the
+        # Windows runner too (PowerShell uses backticks).
+        shell: bash
+        run: |
+          python -m pytest -v \
+            --cov=floppybootcd \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --junitxml=junit.xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            junit.xml
+          if-no-files-found: ignore
+          retention-days: 14

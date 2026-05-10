@@ -53,8 +53,14 @@ class Project:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Project":
-        imgs = [FloppyImage(**i) for i in d.get("images", [])]
-        # filter unknown keys to support forward-compat reads
+        # Filter unknown keys at both levels so newer .fbcd files (which may
+        # have added Project or FloppyImage fields) still open in older
+        # clients with the unknown bits dropped.
+        img_valid = {f for f in FloppyImage.__dataclass_fields__}
+        imgs = [
+            FloppyImage(**{k: v for k, v in i.items() if k in img_valid})
+            for i in d.get("images", [])
+        ]
         valid = {f for f in cls.__dataclass_fields__}
         clean = {k: v for k, v in d.items() if k in valid and k != "images"}
         return cls(images=imgs, **clean)

@@ -23,6 +23,13 @@ dependencies = [
   "PySide6>=6.6",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=7.0",
+  "pytest-qt>=4.2",
+  "pytest-cov>=4.0",
+]
+
 [project.scripts]
 floppybootcd = "floppybootcd.app:main"
 
@@ -42,3 +49,21 @@ Homepage = "https://github.com/pacnpal/floppybootcd"
 
 [tool.hatch.build.targets.wheel]
 packages = ["floppybootcd"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+  "ignore::DeprecationWarning:PySide6",
+]
+
+[tool.coverage.run]
+source = ["floppybootcd"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if __name__ == ['\"]__main__['\"]:",
+  "@(abc\\.)?abstractmethod",
+]

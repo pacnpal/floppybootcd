@@ -23,6 +23,7 @@ class ImageListWidget(QListWidget):
     files_dropped = Signal(list)         # list[str] of paths dropped from outside
     items_reordered = Signal()
     selection_changed = Signal()         # convenience signal
+    edit_requested = Signal()            # Enter pressed on a selection
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -112,6 +113,11 @@ class ImageListWidget(QListWidget):
             if self.remove_selected():
                 event.accept()
                 self.items_reordered.emit()
+                return
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self.selectedItems():
+                event.accept()
+                self.edit_requested.emit()
                 return
         super().keyPressEvent(event)
 

@@ -859,7 +859,9 @@ Install xorriso (see the [system dependency](#system-dependency-xorriso)
 section) and make sure the directory containing the binary is on your
 `PATH`. The build searches `PATH` plus a handful of common install
 locations (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`,
-`C:\Program Files\xorriso\`, `C:\msys64\usr\bin\`, etc.).
+`C:\Program Files\xorriso\`, `C:\msys64\usr\bin\`, etc.). If it's
+installed somewhere else entirely, point to it via
+**Tools → Set xorriso Path...** — the path is remembered between runs.
 
 **"Failed to load libcom32.c32" at boot**
 The `lib*.c32` modules didn't end up on the disc. Run **Tools → Clear
