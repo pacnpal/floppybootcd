@@ -496,13 +496,16 @@ floppybootcd</code></pre>
   const PRELOADED = /*BUILD_DATA_START*/ null /*BUILD_DATA_END*/;
   const REPO = "pacnpal/floppybootcd";
 
+  // Platform labels include the minimum supported OS version so the
+  // download table doubles as a compatibility hint. Versions match the
+  // Supported Operating Systems table further down the page.
   const PLATFORMS = [
-    { label: "macOS",   arch: "Apple Silicon",    match: /-macos-arm64\.zip$/ },
-    { label: "macOS",   arch: "Intel",            match: /-macos-x86_64\.zip$/ },
-    { label: "Windows", arch: "x86_64",           match: /-windows-x86_64\.zip$/ },
-    { label: "Windows", arch: "ARM64",            match: /-windows-arm64\.zip$/ },
-    { label: "Linux",   arch: "x86_64",           match: /-linux-x86_64\.tar\.gz$/ },
-    { label: "Linux",   arch: "ARM64 / Raspberry Pi", match: /-linux-arm64\.tar\.gz$/ },
+    { label: "macOS 13+",  arch: "Apple Silicon",       match: /-macos-arm64\.zip$/ },
+    { label: "macOS 13+",  arch: "Intel",               match: /-macos-x86_64\.zip$/ },
+    { label: "Windows 10", arch: "x86_64",              match: /-windows-x86_64\.zip$/ },
+    { label: "Windows 11", arch: "ARM64",               match: /-windows-arm64\.zip$/ },
+    { label: "Linux",      arch: "x86_64",              match: /-linux-x86_64\.tar\.gz$/ },
+    { label: "Linux",      arch: "ARM64 / Raspberry Pi", match: /-linux-arm64\.tar\.gz$/ },
   ];
 
   function fmtBytes(n) {
