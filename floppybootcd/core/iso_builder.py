@@ -116,8 +116,8 @@ def validate_project(project: Project) -> list[str]:
             f"Total floppy payload is "
             f"{total / (1024 * 1024):.1f} MiB which exceeds the "
             f"{image_prep.CD_USABLE_BYTES / (1024 * 1024):.0f} MiB "
-            "usable on a 700 MB CD-R (after bootloader overhead). "
-            "Remove some images or burn to DVD media."
+            "usable on an 80-minute 700 MiB CD-R (after bootloader and "
+            "ISO 9660 overhead). Remove some images or burn to DVD media."
         )
     return problems
 

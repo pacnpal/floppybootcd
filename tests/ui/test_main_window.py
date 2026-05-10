@@ -1,11 +1,13 @@
 """Tests for MainWindow state management. Avoids dialog-spawning code paths."""
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QSettings
 
+from floppybootcd.core import image_prep
 from floppybootcd.core.project import FloppyImage, Project
 from floppybootcd.ui.main_window import MainWindow
 
@@ -223,6 +225,57 @@ class TestXorrisoPathSetting:
         win._build_iso(tmp_path / "out.iso", then_burn=False)
 
         assert captured["opts"].xorriso_override == "/opt/custom/xorriso"
+
+
+class TestCapacityLabel:
+    """The status-bar capacity indicator must reflect uncompressed
+    inner-image size for .imz, and switch styling when over capacity."""
+
+    def test_empty_project_shows_zero(self, win):
+        text = win.capacity_label.text()
+        assert text.startswith("Disc usage: 0.0 MiB")
+        assert "MiB" in text  # binary unit, not "MB"
+
+    def test_raw_image_counts_filesystem_size(self, win, tmp_path):
+        f = tmp_path / "a.img"
+        f.write_bytes(b"\0" * (2 * 1024 * 1024))  # 2 MiB
+        win._add_paths([str(f)])
+        text = win.capacity_label.text()
+        assert "2.0 MiB" in text
+
+    def test_imz_counts_uncompressed_inner_size(self, win, tmp_path):
+        # Tiny on disk, 1440 KiB inner — capacity should reflect inner.
+        f = tmp_path / "boot.imz"
+        with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("boot.ima", b"\0" * 1440 * 1024)
+        assert f.stat().st_size < 100 * 1024  # archive is well under 100 KiB
+        win._add_paths([str(f)])
+        text = win.capacity_label.text()
+        # 1440 KiB ≈ 1.4 MiB
+        assert "1.4 MiB" in text
+
+    def test_over_capacity_shows_warning_and_red(
+        self, win, tmp_path, monkeypatch
+    ):
+        # Shrink the usable capacity so a small file pushes us over.
+        monkeypatch.setattr(image_prep, "CD_USABLE_BYTES", 1024)
+        f = tmp_path / "a.img"
+        f.write_bytes(b"\0" * 4096)  # 4 KiB > 1 KiB usable
+        win._add_paths([str(f)])
+        text = win.capacity_label.text()
+        assert "over CD-R capacity" in text
+        assert "#b00020" in win.capacity_label.styleSheet()
+
+    def test_within_capacity_no_warning(self, win, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            image_prep, "CD_USABLE_BYTES", 100 * 1024 * 1024
+        )
+        f = tmp_path / "a.img"
+        f.write_bytes(b"\0" * 1024)  # tiny
+        win._add_paths([str(f)])
+        text = win.capacity_label.text()
+        assert "over CD-R capacity" not in text
+        assert "near limit" not in text
 
 
 class TestUpdateTitle:

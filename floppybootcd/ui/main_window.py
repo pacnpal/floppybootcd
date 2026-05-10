@@ -179,10 +179,10 @@ class MainWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
         self.capacity_label = QLabel()
         self.capacity_label.setToolTip(
-            "Total floppy payload that will be written to the disc, "
-            "vs. the usable capacity of a 700 MB CD-R after bootloader "
-            "and ISO 9660 overhead. Compressed (.imz) images count by "
-            "their uncompressed size."
+            "Total floppy payload that will be written to the disc, vs. "
+            "the usable capacity of an 80-minute 700 MiB CD-R after "
+            "bootloader and ISO 9660 overhead. Compressed (.imz) images "
+            "count by their uncompressed size."
         )
         self.statusBar().addPermanentWidget(self.capacity_label)
         self._update_selection_buttons()
@@ -492,9 +492,9 @@ class MainWindow(QMainWindow):
             img.path for img in self.project.images
         )
         usable = image_prep.CD_USABLE_BYTES
-        used_mb = used / (1024 * 1024)
-        usable_mb = usable / (1024 * 1024)
-        text = f"Disc usage: {used_mb:.1f} MB / {usable_mb:.0f} MB"
+        used_mib = used / (1024 * 1024)
+        usable_mib = usable / (1024 * 1024)
+        text = f"Disc usage: {used_mib:.1f} MiB / {usable_mib:.0f} MiB"
         if used > usable:
             text += "  ⚠ over CD-R capacity"
             color = "color: #b00020;"

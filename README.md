@@ -584,12 +584,13 @@ build time). Files outside this list are ignored on drag-drop. The
 offers an "All files" filter if you need it.
 
 The status bar shows a running total of the floppy payload against the
-usable capacity of a 700 MB CD-R (about 692 MB after bootloader / ISO
-9660 overhead). `.imz` images count by their **uncompressed** inner
-size, since that's what actually lands on the disc after build-time
-extraction. Builds that exceed the CD capacity are flagged as a project
-problem before xorriso runs; either drop some images or burn to DVD
-media.
+usable capacity of an 80-minute 700 MiB CD-R (about 692 MiB after
+bootloader / ISO 9660 overhead). All sizes are reported in binary MiB
+to match the underlying byte math. `.imz` images count by their
+**uncompressed** inner size, since that's what actually lands on the
+disc after build-time extraction. Builds that exceed the CD capacity
+are flagged as a project problem before xorriso runs; either drop some
+images or burn to DVD media.
 
 Duplicate paths are silently skipped — adding the same image twice does
 nothing rather than producing a confusing duplicate entry.

@@ -7,7 +7,11 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 
-from ..core.image_prep import ALL_ACCEPTED_EXTS, probe_uncompressed_size
+from ..core.image_prep import (
+    ALL_ACCEPTED_EXTS,
+    COMPRESSED_EXTS,
+    probe_uncompressed_size,
+)
 from ..core.project import FloppyImage
 
 
@@ -123,9 +127,21 @@ class ImageListWidget(QListWidget):
     def _format_label(img: FloppyImage) -> str:
         # Show the floppy's real (uncompressed) size for .imz containers
         # so the column reflects what the OS will see, not the archive.
-        size_bytes = probe_uncompressed_size(img.path) or img.size_bytes
-        kb = size_bytes // 1024
-        size_str = f"{kb} KB" if kb < 4096 else f"{kb / 1024:.1f} MB"
+        # If a .imz fails to probe (corrupt / encrypted), show "?" rather
+        # than the misleading on-disk archive size.
+        ext = Path(img.path).suffix.lower()
+        if ext in COMPRESSED_EXTS:
+            inner = probe_uncompressed_size(img.path)
+            if inner == 0:
+                size_str = "? (invalid .imz)"
+            else:
+                kb = inner // 1024
+                size_str = (
+                    f"{kb} KB" if kb < 4096 else f"{kb / 1024:.1f} MB"
+                )
+        else:
+            kb = img.size_bytes // 1024
+            size_str = f"{kb} KB" if kb < 4096 else f"{kb / 1024:.1f} MB"
         prefix = "★ " if img.default else "   "
         label = img.display_label
         return f"{prefix}{label}    [{img.filename}, {size_str}]"

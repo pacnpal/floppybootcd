@@ -10,6 +10,7 @@ user-facing error.
 """
 from __future__ import annotations
 
+import functools
 import shutil
 import zipfile
 from pathlib import Path
@@ -127,6 +128,19 @@ def total_payload_size(paths) -> int:
     return sum(probe_uncompressed_size(p) for p in paths)
 
 
+@functools.lru_cache(maxsize=512)
+def _imz_inner_size_cached(path_str: str, mtime_ns: int, size: int) -> int:
+    """Read the uncompressed inner-image size out of an ``.imz`` ZIP
+    central directory. Cached on (path, mtime, on-disk size) so the UI
+    can call this on every refresh without re-opening the archive.
+    """
+    try:
+        with _open_imz(Path(path_str)) as zf:
+            return _pick_inner_member(zf, Path(path_str).name).file_size
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return 0
+
+
 def probe_uncompressed_size(path: str | Path) -> int:
     """Return the size of the inner floppy image.
 
@@ -134,12 +148,15 @@ def probe_uncompressed_size(path: str | Path) -> int:
     the uncompressed size of the inner member as recorded in the ZIP
     central directory (no decompression performed). Returns 0 if the
     file is missing or unreadable so callers can render gracefully.
+
+    For ``.imz`` the answer is memoized on (path, mtime, size) so
+    repeated UI refreshes don't repeatedly open the archive.
     """
     p = Path(path)
     try:
-        if is_compressed(p):
-            with _open_imz(p) as zf:
-                return _pick_inner_member(zf, p.name).file_size
-        return p.stat().st_size
-    except (OSError, ValueError, zipfile.BadZipFile):
+        st = p.stat()
+    except OSError:
         return 0
+    if is_compressed(p):
+        return _imz_inner_size_cached(str(p), st.st_mtime_ns, st.st_size)
+    return st.st_size
