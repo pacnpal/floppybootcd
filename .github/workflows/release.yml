@@ -228,6 +228,47 @@ jobs:
           python -m pip install .
           python -m pip install pyinstaller
 
+      # PyInstaller scans the PySide6 install in site-packages and warns
+      # whenever a bundled Qt plugin .dylib/.so/.dll references a host
+      # path that doesn't exist on the build runner (libmimerapi, libpq,
+      # libiodbc, QtQuickShapesDesignHelpers). --exclude-module only
+      # filters Python imports — the native plugin files are still on
+      # disk for PyInstaller to scan and complain about. Delete them
+      # from site-packages BEFORE pyinstaller runs so it never sees
+      # them. Mirrors the post-build prune step further down, so
+      # nothing the running app needs is touched.
+      - name: Pre-prune PySide6 install (silence PyInstaller warnings)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYSIDE_DIR=$(python -c "import PySide6, os; print(os.path.dirname(PySide6.__file__))")
+          echo "Pre-pruning $PYSIDE_DIR"
+          QT="$PYSIDE_DIR/Qt"
+          if [ -d "$QT/plugins" ]; then
+            for p in sqldrivers multimedia mediaservice \
+                     position geoservices texttospeech \
+                     webview networkinformation tls canbus \
+                     sensors sensorgestures gamepads \
+                     designer renderers qmltooling \
+                     scxmldatamodel assetimporters; do
+              if [ -d "$QT/plugins/$p" ]; then
+                rm -rf "$QT/plugins/$p"
+                echo "  removed Qt/plugins/$p"
+              fi
+            done
+          fi
+          # QML imports include QtQuick.Shapes.DesignHelpers which
+          # @rpaths into a framework we don't ship.
+          if [ -d "$QT/qml" ]; then
+            rm -rf "$QT/qml"
+            echo "  removed Qt/qml"
+          fi
+          # Locale .qm files; app is English-only.
+          if [ -d "$QT/translations" ]; then
+            rm -rf "$QT/translations"
+            echo "  removed Qt/translations"
+          fi
+
       - name: Resolve version
         id: version
         shell: bash
