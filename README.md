@@ -1,5 +1,15 @@
 # FloppyBootCD
 
+[![Latest release](https://img.shields.io/github/v/release/pacnpal/floppybootcd?include_prereleases&sort=semver)](https://github.com/pacnpal/floppybootcd/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/pacnpal/floppybootcd)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![UI: PySide6 / Qt6](https://img.shields.io/badge/UI-PySide6%20%2F%20Qt6-41cd52.svg)](https://doc.qt.io/qtforpython-6/)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#quick-start)
+[![Bootloader](https://img.shields.io/badge/bootloader-ISOLINUX%20%2B%20MEMDISK-orange.svg)](https://wiki.syslinux.org/wiki/index.php?title=ISOLINUX)
+[![Build with uv](https://img.shields.io/badge/built%20with-uv-261230.svg)](https://docs.astral.sh/uv/)
+[![Code style: PEP 8](https://img.shields.io/badge/code%20style-PEP%208-1f425f.svg)](https://peps.python.org/pep-0008/)
+[![GitHub stars](https://img.shields.io/github/stars/pacnpal/floppybootcd?style=social)](https://github.com/pacnpal/floppybootcd/stargazers)
+
 Build bootable CDs from collections of floppy disk images for vintage
 computers. Like Ventoy, but for CDs and floppy images instead of USB sticks
 and ISOs.
