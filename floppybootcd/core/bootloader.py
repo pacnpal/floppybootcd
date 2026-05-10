@@ -100,8 +100,8 @@ class IsolinuxBackend(BootloaderBackend):
                 shutil.copy2(bg_src, isolinux_dir / "background.png")
 
         # Stage floppy images, dedup names if needed. Compressed (.imz)
-        # sources are extracted; the on-disc filename uses the inner
-        # image's natural extension via image_prep.staged_filename.
+        # sources are extracted; the on-disc filename is always
+        # <stem>.ima for .imz inputs (see image_prep.staged_filename).
         seen: set[str] = set()
         renamed: dict[int, str] = {}
         for idx, img in enumerate(project.images):

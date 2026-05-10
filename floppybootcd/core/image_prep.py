@@ -43,9 +43,10 @@ def is_compressed(path: str | Path) -> bool:
 def staged_filename(src_name: str) -> str:
     """Filename to use when staging *src_name* into the ISO's images dir.
 
-    Raw images keep their name; ``.imz`` containers are renamed to the
-    extracted image's natural extension (``.ima``) so the filename on
-    the burned disc reflects what's actually there.
+    Raw images keep their name. ``.imz`` containers are always staged
+    as ``<stem>.ima`` regardless of the inner member's actual extension
+    (``.ima`` is the canonical raw-floppy-image extension and what the
+    burned disc should advertise).
     """
     p = Path(src_name)
     if p.suffix.lower() in COMPRESSED_EXTS:
