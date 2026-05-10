@@ -15,24 +15,41 @@ operating systems boot exactly as they would from physical media.
 ## Quick start
 
 > **Note:** FloppyBootCD installs straight from this GitHub repo. It is not
-> on PyPI. The commands below all use the `git+https://github.com/pacnpal/floppybootcd`
-> source.
+> on PyPI. The commands below all use the
+> `git+https://github.com/pacnpal/floppybootcd` source.
 
 ### macOS
 
 ```bash
-# 1. Install uv (skip if you already have it)
+# 1. Install uv (skip if you already have it).
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install xorriso (the ISO build tool)
+# 2. Open a NEW terminal so PATH picks up uv. Then verify:
+uv --version
+
+# 3. Install xorriso (the ISO build tool).
 brew install xorriso
 
-# 3. Install and run FloppyBootCD
+# 4. Install FloppyBootCD into uv's tool directory.
+#    Installs to: ~/.local/share/uv/tools/floppybootcd/
+#    Adds executable: ~/.local/bin/floppybootcd
 uv tool install git+https://github.com/pacnpal/floppybootcd
+
+# 5. If uv warns "is not on your PATH", run this once and open a new
+#    terminal:
+uv tool update-shell
+
+# 6. Run it.
 floppybootcd
 ```
 
-Or run once without installing:
+If `floppybootcd` still isn't found, you can always run it via uv directly:
+
+```bash
+uv tool run floppybootcd      # equivalent to `floppybootcd`
+```
+
+Or skip installing entirely:
 
 ```bash
 uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
@@ -41,20 +58,37 @@ uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 ### Linux
 
 ```bash
-# 1. Install uv (skip if you already have it)
+# 1. Install uv (skip if you already have it).
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install xorriso (use your distro's package manager)
+# 2. Open a NEW terminal so PATH picks up uv. Then verify:
+uv --version
+
+# 3. Install xorriso. Pick your distro's command:
 sudo apt install xorriso         # Debian / Ubuntu
 sudo dnf install xorriso         # Fedora / RHEL
 sudo pacman -S libisoburn        # Arch
 
-# 3. Install and run FloppyBootCD
+# 4. Install FloppyBootCD into uv's tool directory.
+#    Installs to: ~/.local/share/uv/tools/floppybootcd/
+#    Adds executable: ~/.local/bin/floppybootcd
 uv tool install git+https://github.com/pacnpal/floppybootcd
+
+# 5. If uv warns "is not on your PATH", run this once and open a new
+#    terminal:
+uv tool update-shell
+
+# 6. Run it.
 floppybootcd
 ```
 
-Or run once without installing:
+If `floppybootcd` still isn't found, run via uv directly:
+
+```bash
+uv tool run floppybootcd
+```
+
+Or skip installing entirely:
 
 ```bash
 uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
@@ -62,26 +96,69 @@ uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 
 ### Windows
 
-In PowerShell:
+In **PowerShell**:
 
 ```powershell
-# 1. Install uv (skip if you already have it)
+# 1. Install uv (skip if you already have it).
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# 2. Install xorriso
-scoop install xorriso
-# (or download from https://www.gnu.org/software/xorriso/)
+# 2. Open a NEW PowerShell window so PATH picks up uv. Then verify:
+uv --version
 
-# 3. Install and run FloppyBootCD
+# 3. Install xorriso.
+scoop install xorriso
+# (or download from https://www.gnu.org/software/xorriso/ and put
+#  xorriso.exe somewhere on your PATH)
+
+# 4. Install FloppyBootCD into uv's tool directory.
+#    Installs to: %LOCALAPPDATA%\uv\tools\floppybootcd\
+#    Adds executable: %USERPROFILE%\.local\bin\floppybootcd.exe
 uv tool install git+https://github.com/pacnpal/floppybootcd
+
+# 5. If uv warns "is not on your PATH", run this once and open a new
+#    PowerShell window:
+uv tool update-shell
+
+# 6. Run it.
 floppybootcd
 ```
 
-Or run once without installing:
+If `floppybootcd` still isn't found, run via uv directly:
+
+```powershell
+uv tool run floppybootcd
+```
+
+Or skip installing entirely:
 
 ```powershell
 uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 ```
+
+### Where uv puts everything
+
+When you run `uv tool install floppybootcd`, two things land on disk:
+
+| What | macOS / Linux | Windows |
+|------|---------------|---------|
+| The isolated venv (Python + PySide6 + FloppyBootCD) | `~/.local/share/uv/tools/floppybootcd/` | `%LOCALAPPDATA%\uv\tools\floppybootcd\` |
+| The launcher executable | `~/.local/bin/floppybootcd` | `%USERPROFILE%\.local\bin\floppybootcd.exe` |
+
+You don't run anything from inside the venv directory. uv puts a small
+launcher in the **executable directory** that knows how to start the venv
+and run the app. As long as that executable directory is on your `PATH`,
+typing `floppybootcd` in any shell works.
+
+To check the paths yourself:
+
+```bash
+uv tool dir            # the venv directory
+uv tool dir --bin      # the executable directory
+uv tool list           # everything you've installed via `uv tool`
+```
+
+If `floppybootcd` isn't found after install, the executable directory
+isn't on your PATH yet — see [Troubleshooting](#troubleshooting).
 
 ### Without uv (pip)
 
@@ -97,7 +174,13 @@ python -m pip install --user "git+https://github.com/pacnpal/floppybootcd.git"
 floppybootcd
 ```
 
-You'll still need `xorriso` installed via the platform commands shown above.
+`pip --user` installs to a similar place: `~/.local/bin/floppybootcd` on
+macOS/Linux or `%APPDATA%\Python\Python3xx\Scripts\floppybootcd.exe` on
+Windows. The same PATH caveat applies — see
+[Troubleshooting](#troubleshooting) if the command isn't found.
+
+You'll still need `xorriso` installed via the platform commands shown
+above.
 
 ---
 
@@ -154,14 +237,16 @@ configure beyond the install line itself.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Open a new terminal afterward so the `PATH` change takes effect, then check
-it works:
+The installer puts the `uv` binary at `~/.local/bin/uv` and adds
+`~/.local/bin` to your PATH by editing your shell profile (`~/.zshenv`,
+`~/.bashrc`, etc.). **Open a new terminal** so the PATH change takes
+effect, then verify:
 
 ```bash
 uv --version
 ```
 
-Alternative methods on macOS / Linux:
+Alternative methods:
 
 ```bash
 brew install uv          # Homebrew
@@ -176,13 +261,15 @@ In PowerShell:
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Open a new PowerShell window and verify:
+The installer puts `uv.exe` at `%USERPROFILE%\.local\bin\uv.exe` and adds
+that directory to your user PATH. **Open a new PowerShell window** and
+verify:
 
 ```powershell
 uv --version
 ```
 
-Alternatives on Windows:
+Alternatives:
 
 ```powershell
 winget install --id=astral-sh.uv -e
@@ -205,41 +292,85 @@ command instead.)
 FloppyBootCD is installed directly from this Git repository. It is not
 published to PyPI.
 
-### With uv (recommended)
+### What `uv tool install` actually does
 
-Install once and run from anywhere:
+`uv tool install` is the right command for an end-user GUI app. It:
+
+1. Creates an **isolated virtual environment** for FloppyBootCD (so
+   PySide6 doesn't pollute your system Python).
+2. Installs FloppyBootCD and its dependencies into that venv.
+3. Drops a small **launcher executable** into a directory that's on your
+   PATH. That launcher activates the venv and runs FloppyBootCD's
+   `main()` for you.
+
+You never need to activate the venv yourself. You don't even need to know
+where it is. You just type `floppybootcd` and the launcher handles the
+rest.
+
+### With uv (recommended)
 
 ```bash
 uv tool install git+https://github.com/pacnpal/floppybootcd
+```
+
+After install, `uv` prints the executable path and warns if it isn't on
+your PATH. If it warns:
+
+```bash
+uv tool update-shell        # adds the executable directory to your shell config
+# Open a new terminal, then:
 floppybootcd
 ```
 
-Or run without installing globally:
+Specific tag, branch, or commit:
+
+```bash
+uv tool install "git+https://github.com/pacnpal/floppybootcd@v0.1.0"
+uv tool install "git+https://github.com/pacnpal/floppybootcd@main"
+uv tool install "git+https://github.com/pacnpal/floppybootcd@<commit-sha>"
+```
+
+### Run without installing (uvx)
 
 ```bash
 uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 ```
 
-`uvx` downloads, caches, and runs FloppyBootCD in an isolated environment.
-Subsequent runs use the cache.
-
-To install a specific tag or commit:
-
-```bash
-uv tool install "git+https://github.com/pacnpal/floppybootcd@v0.1.0"
-uv tool install "git+https://github.com/pacnpal/floppybootcd@main"
-```
+`uvx` downloads, caches, and runs FloppyBootCD in a temporary environment
+under `~/.cache/uv/`. Subsequent runs use the cache. This is the right
+choice for trying it once or running it occasionally without polluting
+PATH.
 
 ### With pip
 
-If you don't want uv, the standard pip path works:
+If you don't want uv:
 
 ```bash
 python -m pip install --user git+https://github.com/pacnpal/floppybootcd.git
-floppybootcd
 ```
 
-Or with a virtual environment:
+`pip --user` installs the package to your user site-packages and the
+`floppybootcd` launcher to:
+
+| Platform | Path |
+|----------|------|
+| macOS / Linux | `~/.local/bin/floppybootcd` |
+| Windows | `%APPDATA%\Python\Python3xx\Scripts\floppybootcd.exe` (where `3xx` is your Python version) |
+
+If that directory isn't on your PATH, the command won't be found. To check:
+
+```bash
+python -m site --user-base                # gives you the prefix
+# Then add `<that path>/bin` to your PATH (Windows: `<that path>\Scripts`)
+```
+
+You can always run via the module name regardless of PATH:
+
+```bash
+python -m floppybootcd
+```
+
+Or in a virtual environment (cleanest option for pip users):
 
 ```bash
 python -m venv .venv
@@ -459,6 +590,10 @@ FloppyBootCD respects each OS's conventions:
 
 To wipe the syslinux cache: **Tools → Clear Syslinux Cache**.
 
+The app itself (when installed via `uv tool install`) lives separately,
+under uv's tool directory — see
+[Where uv puts everything](#where-uv-puts-everything).
+
 ---
 
 ## Supported file types
@@ -565,6 +700,50 @@ pip uninstall floppybootcd           # if installed via pip
 ---
 
 ## Troubleshooting
+
+**`floppybootcd: command not found` after `uv tool install`**
+The launcher landed in uv's executable directory, but that directory isn't
+on your PATH. Three options:
+
+```bash
+# Option A: let uv fix your shell config
+uv tool update-shell
+# Then open a new terminal and try again.
+
+# Option B: see where it actually is, then add to PATH yourself
+uv tool dir --bin
+# macOS / Linux: typically prints ~/.local/bin
+# Windows:       typically prints %USERPROFILE%\.local\bin
+
+# Option C: skip PATH and run via uv
+uv tool run floppybootcd
+```
+
+On macOS specifically, if `uv tool update-shell` says it already added
+the entry but `floppybootcd` still isn't found, your shell may be reading
+a different config file than the one uv edited. Check both `~/.zprofile`
+and `~/.zshenv` for an `export PATH="$HOME/.local/bin:$PATH"` line — if
+neither is being read by your terminal, add it manually to whichever one
+your shell loads on startup, then `source` it or open a new terminal.
+
+**`floppybootcd: command not found` after `pip install --user`**
+Find pip's user-script directory and add it to your PATH:
+
+```bash
+# macOS / Linux
+python -m site --user-base
+# Add <that path>/bin to your PATH
+
+# Windows (PowerShell)
+python -m site --user-base
+# Add <that path>\Scripts to your PATH
+```
+
+Or just run via the module name, which works regardless of PATH:
+
+```bash
+python -m floppybootcd
+```
 
 **"xorriso not found"**
 Install xorriso (see the [system dependency](#system-dependency-xorriso)
