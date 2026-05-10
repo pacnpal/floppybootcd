@@ -5,13 +5,23 @@ x86 boot blobs (they're target binaries, not host binaries).
 """
 from __future__ import annotations
 
+import shutil
+import ssl
 import tarfile
 import urllib.request
-import shutil
 from pathlib import Path
 from typing import Callable
 
+import certifi
+
 from .platform import cache_dir
+
+
+# certifi's CA bundle; portable across host Pythons that may lack a
+# usable system trust store (notably the python.org macOS builds and
+# PyInstaller-bundled Pythons), where the default SSL context yields
+# "CERTIFICATE_VERIFY_FAILED" against any HTTPS URL.
+_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
 # Files we extract from the BIOS variant of syslinux. menu.c32 and
@@ -49,6 +59,35 @@ def have_syslinux_files(version: str) -> bool:
     return all((d / f).is_file() for f in REQUIRED_BIOS_FILES)
 
 
+def _download_to(
+    url: str,
+    dest: Path,
+    label: str,
+    progress: Callable[[str, float], None] | None,
+) -> None:
+    """HTTPS GET `url` into `dest`, streaming with progress callbacks.
+
+    Uses certifi's CA bundle via _SSL_CONTEXT so the download succeeds
+    even on hosts without a usable system trust store (notably the
+    python.org macOS builds and PyInstaller-bundled Pythons).
+    """
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "floppybootcd/syslinux-fetcher",
+    })
+    with urllib.request.urlopen(req, context=_SSL_CONTEXT) as resp:
+        total = int(resp.headers.get("Content-Length", "0") or 0)
+        read = 0
+        with open(dest, "wb") as out:
+            while True:
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+                read += len(chunk)
+                if progress and total > 0:
+                    progress(label, min(1.0, read / total))
+
+
 def fetch_syslinux(
     version: str,
     progress: Callable[[str, float], None] | None = None,
@@ -70,14 +109,10 @@ def fetch_syslinux(
     if force or not tarball.is_file():
         if progress:
             progress(f"Downloading syslinux {version}...", -1.0)
-
-        def _hook(blocks: int, bs: int, total: int) -> None:
-            if progress and total > 0:
-                progress(f"Downloading syslinux {version}...",
-                         min(1.0, blocks * bs / total))
-
         try:
-            urllib.request.urlretrieve(url, tarball, _hook)
+            _download_to(url, tarball,
+                         label=f"Downloading syslinux {version}...",
+                         progress=progress)
         except Exception as e:
             if tarball.exists():
                 tarball.unlink()

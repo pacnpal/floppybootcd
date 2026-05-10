@@ -312,6 +312,7 @@ jobs:
             --icon "$ICON" \
             --collect-all floppybootcd \
             --collect-all PySide6 \
+            --collect-all certifi \
             --exclude-module PySide6.QtSql \
             --exclude-module PySide6.QtQml \
             --exclude-module PySide6.QtQmlModels \

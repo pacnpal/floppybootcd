@@ -76,26 +76,24 @@ class TestFetchSyslinux:
         def boom(*args, **kwargs):
             raise AssertionError("Should not download when cached")
 
-        monkeypatch.setattr(syslinux_fetcher.urllib.request, "urlretrieve", boom)
+        monkeypatch.setattr(syslinux_fetcher, "_download_to", boom)
         result = fetch_syslinux("6.03")
         assert result == d
 
     def test_downloads_and_extracts(self, isolated_cache, monkeypatch):
         d = syslinux_cache_dir("6.03")
 
-        def fake_urlretrieve(url, dest, hook=None):
+        def fake_download(url, dest, label=None, progress=None):
             members = {
                 # The fetcher only uses basenames and skips efi32/efi64
                 f"syslinux-6.03/bios/core/{f}": b"BIOS-" + f.encode()
                 for f in REQUIRED_BIOS_FILES
             }
             _make_tarball(Path(dest), members)
-            if hook:
-                hook(1, 1024, 1024)
+            if progress:
+                progress(label or "", 1.0)
 
-        monkeypatch.setattr(
-            syslinux_fetcher.urllib.request, "urlretrieve", fake_urlretrieve
-        )
+        monkeypatch.setattr(syslinux_fetcher, "_download_to", fake_download)
         result = fetch_syslinux("6.03")
         assert result == d
         for f in REQUIRED_BIOS_FILES:
@@ -106,7 +104,7 @@ class TestFetchSyslinux:
         """efi32/efi64 paths must be ignored even when basename matches."""
         d = syslinux_cache_dir("6.03")
 
-        def fake_urlretrieve(url, dest, hook=None):
+        def fake_download(url, dest, label=None, progress=None):
             members = {}
             # Add EFI variants FIRST so they would win if not filtered
             for f in REQUIRED_BIOS_FILES:
@@ -116,21 +114,17 @@ class TestFetchSyslinux:
                 members[f"syslinux-6.03/bios/com32/{f}"] = b"BIOS-OK"
             _make_tarball(Path(dest), members)
 
-        monkeypatch.setattr(
-            syslinux_fetcher.urllib.request, "urlretrieve", fake_urlretrieve
-        )
+        monkeypatch.setattr(syslinux_fetcher, "_download_to", fake_download)
         fetch_syslinux("6.03")
         for f in REQUIRED_BIOS_FILES:
             assert (d / f).read_bytes() == b"BIOS-OK", f"EFI variant leaked for {f}"
 
     def test_missing_files_raises_clear_error(self, isolated_cache, monkeypatch):
-        def fake_urlretrieve(url, dest, hook=None):
+        def fake_download(url, dest, label=None, progress=None):
             # Only put one of the required files in the tarball.
             _make_tarball(Path(dest), {"syslinux-6.03/bios/isolinux.bin": b"x"})
 
-        monkeypatch.setattr(
-            syslinux_fetcher.urllib.request, "urlretrieve", fake_urlretrieve
-        )
+        monkeypatch.setattr(syslinux_fetcher, "_download_to", fake_download)
         with pytest.raises(RuntimeError, match="Could not find these files"):
             fetch_syslinux("6.03")
 
@@ -138,13 +132,11 @@ class TestFetchSyslinux:
         d = syslinux_cache_dir("6.03")
         partial = d / "syslinux-6.03.tar.gz"
 
-        def failing_urlretrieve(url, dest, hook=None):
+        def failing_download(url, dest, label=None, progress=None):
             Path(dest).write_bytes(b"partial")
             raise OSError("network down")
 
-        monkeypatch.setattr(
-            syslinux_fetcher.urllib.request, "urlretrieve", failing_urlretrieve
-        )
+        monkeypatch.setattr(syslinux_fetcher, "_download_to", failing_download)
         with pytest.raises(RuntimeError, match="Failed to download"):
             fetch_syslinux("6.03")
         assert not partial.exists()
