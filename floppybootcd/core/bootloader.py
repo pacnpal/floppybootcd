@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from .project import Project
-from . import syslinux_fetcher
+from . import image_prep, syslinux_fetcher
 
 
 @dataclass
@@ -99,22 +99,24 @@ class IsolinuxBackend(BootloaderBackend):
             if bg_src.is_file():
                 shutil.copy2(bg_src, isolinux_dir / "background.png")
 
-        # Copy floppy images, dedup names if needed
+        # Stage floppy images, dedup names if needed. Compressed (.imz)
+        # sources are extracted; the on-disc filename is always
+        # <stem>.ima for .imz inputs (see image_prep.staged_filename).
         seen: set[str] = set()
         renamed: dict[int, str] = {}
         for idx, img in enumerate(project.images):
             src = Path(img.path)
-            target_name = src.name
+            target_name = image_prep.staged_filename(src.name)
             n = 1
-            stem, ext = src.stem, src.suffix
+            stem, ext = Path(target_name).stem, Path(target_name).suffix
             while target_name.lower() in seen:
                 target_name = f"{stem}_{n}{ext}"
                 n += 1
             seen.add(target_name.lower())
             renamed[idx] = target_name
-            shutil.copy2(src, images_dir / target_name)
+            image_prep.stage_image(src, images_dir, target_name)
             if progress:
-                progress(f"Copied {target_name}",
+                progress(f"Staged {target_name}",
                          (idx + 1) / max(1, len(project.images)))
 
         # Write isolinux.cfg

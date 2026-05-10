@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +16,36 @@ from floppybootcd.core.iso_builder import (
     validate_project,
 )
 from floppybootcd.core.project import FloppyImage, Project
+
+
+def _find_zip_header(
+    raw: bytearray,
+    signature: bytes,
+    fixed_size: int,
+    member_name: bytes,
+) -> int:
+    """Return the byte offset of the ZIP header (local file or central
+    directory) whose filename matches *member_name*. Scans every
+    occurrence of *signature* so the test doesn't accidentally patch
+    the wrong entry if the archive gains additional members.
+
+    *fixed_size* is the size of the fixed-width portion of the header
+    (30 for local file header, 46 for central directory file header) —
+    the filename immediately follows.
+    """
+    start = 0
+    while True:
+        i = raw.find(signature, start)
+        if i < 0:
+            raise AssertionError(
+                f"No header {signature!r} for {member_name!r} found"
+            )
+        # Filename is at offset fixed_size; its length is the last 2
+        # bytes before it... but for our purposes a prefix match is
+        # enough since we control both ends.
+        if raw[i + fixed_size : i + fixed_size + len(member_name)] == member_name:
+            return i
+        start = i + len(signature)
 
 
 class TestValidateProject:
@@ -72,6 +103,164 @@ class TestValidateProject:
             images=[FloppyImage(path=str(f))],
         )
         assert validate_project(p) == []
+
+    def test_valid_imz_no_problems(self, tmp_path):
+        f = tmp_path / "boot.imz"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr("boot.ima", b"\0" * 1024)
+        p = Project(images=[FloppyImage(path=str(f))])
+        assert validate_project(p) == []
+
+    def test_corrupt_imz_reported(self, tmp_path):
+        f = tmp_path / "broken.imz"
+        f.write_bytes(b"this is not a zip")
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("not a ZIP-format .imz" in s for s in problems)
+
+    def test_encrypted_imz_reported_at_validation(self, tmp_path):
+        # stdlib zipfile can't write encrypted archives, and writestr
+        # resets the flag bits. Build a normal archive, then hex-patch
+        # the encryption flag (bit 0 of the general-purpose flag) in
+        # both the local file header and the central directory entry
+        # for the inner.ima entry so ZipInfo.flag_bits reads back with
+        # bit 0 set.
+        f = tmp_path / "encrypted.imz"
+        member_name = b"inner.ima"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr(member_name.decode(), b"\0" * 32)
+        raw = bytearray(f.read_bytes())
+
+        # Locate the local file header for member_name. Layout:
+        #   PK\x03\x04 ver(2) flag(2@6) method(2) mtime(2) mdate(2)
+        #   crc(4)  compsize(4)  uncompsize(4)  namelen(2@26)  extralen(2@28)
+        #   filename ...
+        lfh = _find_zip_header(raw, b"PK\x03\x04", 30, member_name)
+        raw[lfh + 6] |= 0x01
+
+        # Locate the central directory entry for member_name. Layout:
+        #   PK\x01\x02 vermade(2) verneeded(2) flag(2@8) method(2)
+        #   mtime(2) mdate(2) crc(4) compsize(4) uncompsize(4)
+        #   namelen(2@28) extralen(2@30) commentlen(2@32) ...
+        #   filename ...
+        cdh = _find_zip_header(raw, b"PK\x01\x02", 46, member_name)
+        raw[cdh + 8] |= 0x01
+        f.write_bytes(bytes(raw))
+
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("encrypted" in s.lower() for s in problems)
+
+    def test_imz_with_empty_inner_image_reported(self, tmp_path):
+        # Archive opens fine and the inner member is readable, but the
+        # inner image is zero bytes — must be rejected, mirroring the
+        # raw-image empty check.
+        f = tmp_path / "empty_inner.imz"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr("inner.ima", b"")
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any(
+            "empty" in s.lower() and "inner" in s.lower() for s in problems
+        )
+
+    def test_imz_without_floppy_member_reported(self, tmp_path):
+        f = tmp_path / "nofloppy.imz"
+        with zipfile.ZipFile(f, "w") as zf:
+            zf.writestr("readme.txt", b"hello")
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("no floppy image" in s for s in problems)
+
+    def test_oversized_imz_inner_image_warned(self, tmp_path):
+        # Highly compressible inner image: tiny on disk, huge inflated.
+        # Stream from a sparse file so we don't allocate 51 MiB in RAM.
+        inner = tmp_path / "inner.ima"
+        with open(inner, "wb") as fh:
+            fh.seek(51 * 1024 * 1024 - 1)
+            fh.write(b"\0")
+        f = tmp_path / "huge.imz"
+        with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(inner, arcname="inner.ima")
+        # Sanity: the .imz on disk is *not* >50 MiB — only the inner is.
+        assert f.stat().st_size < 50 * 1024 * 1024
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("unusually large" in s for s in problems)
+
+    def test_total_payload_within_capacity_no_problem(self, tmp_path):
+        f = tmp_path / "ok.img"
+        f.write_bytes(b"\0" * (1440 * 1024))
+        p = Project(images=[FloppyImage(path=str(f))])
+        assert validate_project(p) == []
+
+    def test_total_payload_exceeding_cd_capacity_reported(
+        self, tmp_path, monkeypatch
+    ):
+        # Shrink the usable capacity for the test rather than allocating
+        # a real 700 MB worth of files. Patch via the iso_builder module
+        # since validate_project reads the constant through image_prep.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 4096)
+        f = tmp_path / "big.img"
+        f.write_bytes(b"\0" * 8192)  # 8 KB > 4 KB usable
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("exceeds" in s and "CD-R" in s for s in problems)
+
+    def test_vesa_background_counts_against_capacity(
+        self, tmp_path, monkeypatch
+    ):
+        # The VESA background image is staged onto the ISO, so it
+        # should count against the CD-R budget.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 8192)
+        f = tmp_path / "ok.img"
+        f.write_bytes(b"\0" * 4096)  # under capacity on its own
+        bg = tmp_path / "bg.png"
+        bg.write_bytes(b"\0" * 8192)  # pushes total over capacity
+        p = Project(
+            menu_style="vesa",
+            background_image=str(bg),
+            images=[FloppyImage(path=str(f))],
+        )
+        problems = validate_project(p)
+        assert any("exceeds" in s and "CD-R" in s for s in problems)
+
+    def test_text_menu_ignores_background_for_capacity(
+        self, tmp_path, monkeypatch
+    ):
+        # In text-menu mode the background image isn't staged, so a
+        # huge background must not trip the capacity check.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 8192)
+        f = tmp_path / "ok.img"
+        f.write_bytes(b"\0" * 4096)
+        bg = tmp_path / "bg.png"
+        bg.write_bytes(b"\0" * 1024 * 1024)
+        p = Project(
+            menu_style="text",
+            background_image=str(bg),
+            images=[FloppyImage(path=str(f))],
+        )
+        # No problems — capacity ignores the background in text mode.
+        assert validate_project(p) == []
+
+    def test_imz_inner_size_counts_against_capacity(
+        self, tmp_path, monkeypatch
+    ):
+        # A tiny-on-disk .imz with a large inner image should be flagged
+        # by capacity check based on the inner uncompressed size.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 4096)
+        f = tmp_path / "huge.imz"
+        with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inner.ima", b"\0" * 8192)
+        # The .imz on disk is well under 4 KB; only the inner is over.
+        assert f.stat().st_size < 4096
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("exceeds" in s and "CD-R" in s for s in problems)
 
     def test_text_menu_ignores_background(self, tmp_path):
         f = tmp_path / "ok.img"

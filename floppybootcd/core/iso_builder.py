@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from .project import Project
-from . import bootloader
+from . import bootloader, image_prep
 
 
 def _bundled_xorriso() -> str | None:
@@ -113,17 +113,50 @@ def validate_project(project: Project) -> list[str]:
         size = p.stat().st_size
         if size == 0:
             problems.append(f"Image {i} ({p.name}) is empty.")
+            continue
+        if image_prep.is_compressed(p):
+            err, inner_size = image_prep.verify_imz_readable(p)
+            if err is not None:
+                problems.append(f"Image {i} ({p.name}): {err}")
+                continue
+            # verify_imz_readable already rejects empty inner images,
+            # so inner_size is guaranteed > 0 here.
+            effective_size = inner_size
+        else:
+            effective_size = size
         # Floppy images aren't strictly required to be 1.44/2.88, but warn on
         # totally absurd sizes.
-        if size > 50 * 1024 * 1024:
+        if effective_size > 50 * 1024 * 1024:
             problems.append(
-                f"Image {i} ({p.name}) is {size // (1024*1024)} MiB which is "
+                f"Image {i} ({p.name}) is "
+                f"{effective_size // (1024*1024)} MiB which is "
                 "unusually large for a floppy image. memdisk supports it but "
                 "boot times may be very long."
             )
     if project.menu_style == "vesa":
         if project.background_image and not Path(project.background_image).is_file():
             problems.append(f"Background image not found: {project.background_image}")
+
+    # Capacity check: aggregate everything that will land on the
+    # burned disc — floppy payload (using uncompressed inner sizes
+    # for .imz) plus the VESA background image when used — and
+    # compare against CD-R usable capacity.
+    total = image_prep.total_disc_payload(
+        (img.path for img in project.images if Path(img.path).is_file()),
+        vesa_background=(
+            project.background_image
+            if project.menu_style == "vesa"
+            else None
+        ),
+    )
+    if total > image_prep.CD_USABLE_BYTES:
+        problems.append(
+            f"Total floppy payload is "
+            f"{total / (1024 * 1024):.1f} MiB which exceeds the "
+            f"{image_prep.CD_USABLE_BYTES / (1024 * 1024):.0f} MiB "
+            "usable on an 80-minute 700 MiB CD-R (after bootloader and "
+            "ISO 9660 overhead). Remove some images or burn to DVD media."
+        )
     return problems
 
 

@@ -7,10 +7,12 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 
+from ..core.image_prep import (
+    ALL_ACCEPTED_EXTS,
+    COMPRESSED_EXTS,
+    probe_uncompressed_size,
+)
 from ..core.project import FloppyImage
-
-
-FLOPPY_EXTS = {".img", ".ima", ".vfd", ".flp"}
 
 
 class ImageListWidget(QListWidget):
@@ -69,7 +71,7 @@ class ImageListWidget(QListWidget):
                 if url.isLocalFile():
                     p = url.toLocalFile()
                     ext = Path(p).suffix.lower()
-                    if Path(p).is_file() and ext in FLOPPY_EXTS:
+                    if Path(p).is_file() and ext in ALL_ACCEPTED_EXTS:
                         paths.append(p)
             if paths:
                 self.files_dropped.emit(paths)
@@ -86,8 +88,7 @@ class ImageListWidget(QListWidget):
         item = QListWidgetItem(self._format_label(img))
         item.setData(Qt.ItemDataRole.UserRole, img)
         item.setToolTip(img.path)
-        if not img.exists:
-            item.setForeground(Qt.GlobalColor.red)
+        self._apply_exists_color(item, img)
         self.addItem(item)
 
     def update_item(self, row: int) -> None:
@@ -97,6 +98,18 @@ class ImageListWidget(QListWidget):
         img: FloppyImage = item.data(Qt.ItemDataRole.UserRole)
         item.setText(self._format_label(img))
         item.setToolTip(img.path)
+        self._apply_exists_color(item, img)
+
+    @staticmethod
+    def _apply_exists_color(item: QListWidgetItem, img: FloppyImage) -> None:
+        """Tint missing-file rows red; restore the default brush when
+        the file is present again. Without the clear branch, an item
+        edited from missing→present would stay red."""
+        if not img.exists:
+            item.setForeground(Qt.GlobalColor.red)
+        else:
+            # Reset to the view's default text color.
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
 
     def get_images(self) -> list[FloppyImage]:
         return [self.item(i).data(Qt.ItemDataRole.UserRole)
@@ -123,8 +136,25 @@ class ImageListWidget(QListWidget):
 
     @staticmethod
     def _format_label(img: FloppyImage) -> str:
-        kb = img.size_bytes // 1024
-        size_str = f"{kb} KB" if kb < 4096 else f"{kb / 1024:.1f} MB"
+        # Show the floppy's real (uncompressed) size for .imz containers
+        # so the column reflects what the OS will see, not the archive.
+        # Distinguish a missing file from a corrupt/encrypted .imz so the
+        # user knows whether to fix the path or re-export the archive.
+        ext = Path(img.path).suffix.lower()
+        if not img.exists:
+            size_str = "missing"
+        elif ext in COMPRESSED_EXTS:
+            inner = probe_uncompressed_size(img.path)
+            if inner == 0:
+                size_str = "? (invalid .imz)"
+            else:
+                kb = inner // 1024
+                size_str = (
+                    f"{kb} KB" if kb < 4096 else f"{kb / 1024:.1f} MB"
+                )
+        else:
+            kb = img.size_bytes // 1024
+            size_str = f"{kb} KB" if kb < 4096 else f"{kb / 1024:.1f} MB"
         prefix = "★ " if img.default else "   "
         label = img.display_label
         return f"{prefix}{label}    [{img.filename}, {size_str}]"
