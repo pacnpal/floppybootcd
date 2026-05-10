@@ -157,7 +157,11 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumHeight(140)
         font = self.log_view.font()
-        font.setFamily("Menlo, Consolas, monospace")
+        # setFamilies() takes a fallback list; setFamily() only takes one
+        # family name and treats a comma-separated string as a single
+        # bogus family — Qt then spends ~60ms at startup populating
+        # font-family aliases and prints a warning.
+        font.setFamilies(["Menlo", "Consolas", "monospace"])
         self.log_view.setFont(font)
         bottom_layout.addWidget(self.log_view)
 
