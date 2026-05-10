@@ -12,13 +12,101 @@ operating systems boot exactly as they would from physical media.
 
 ---
 
+## Quick start
+
+> **Note:** FloppyBootCD installs straight from this GitHub repo. It is not
+> on PyPI. The commands below all use the `git+https://github.com/pacnpal/floppybootcd`
+> source.
+
+### macOS
+
+```bash
+# 1. Install uv (skip if you already have it)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Install xorriso (the ISO build tool)
+brew install xorriso
+
+# 3. Install and run FloppyBootCD
+uv tool install git+https://github.com/pacnpal/floppybootcd
+floppybootcd
+```
+
+Or run once without installing:
+
+```bash
+uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
+```
+
+### Linux
+
+```bash
+# 1. Install uv (skip if you already have it)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Install xorriso (use your distro's package manager)
+sudo apt install xorriso         # Debian / Ubuntu
+sudo dnf install xorriso         # Fedora / RHEL
+sudo pacman -S libisoburn        # Arch
+
+# 3. Install and run FloppyBootCD
+uv tool install git+https://github.com/pacnpal/floppybootcd
+floppybootcd
+```
+
+Or run once without installing:
+
+```bash
+uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
+```
+
+### Windows
+
+In PowerShell:
+
+```powershell
+# 1. Install uv (skip if you already have it)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# 2. Install xorriso
+scoop install xorriso
+# (or download from https://www.gnu.org/software/xorriso/)
+
+# 3. Install and run FloppyBootCD
+uv tool install git+https://github.com/pacnpal/floppybootcd
+floppybootcd
+```
+
+Or run once without installing:
+
+```powershell
+uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
+```
+
+### Without uv (pip)
+
+If you'd rather use pip directly:
+
+```bash
+# macOS / Linux
+python -m pip install --user git+https://github.com/pacnpal/floppybootcd.git
+floppybootcd
+
+# Windows (PowerShell)
+python -m pip install --user "git+https://github.com/pacnpal/floppybootcd.git"
+floppybootcd
+```
+
+You'll still need `xorriso` installed via the platform commands shown above.
+
+---
+
 ## Table of contents
 
 - [What it does](#what-it-does)
-- [Install uv (recommended)](#install-uv-recommended)
-- [Install FloppyBootCD](#install-floppybootcd)
+- [Installing uv](#installing-uv)
+- [Installing FloppyBootCD](#installing-floppybootcd)
 - [System dependency: xorriso](#system-dependency-xorriso)
-- [Quick start](#quick-start)
 - [The interface](#the-interface)
 - [Features in depth](#features-in-depth)
   - [Adding images](#adding-images)
@@ -32,6 +120,7 @@ operating systems boot exactly as they would from physical media.
 - [Where files live](#where-files-live)
 - [Supported file types](#supported-file-types)
 - [Extending FloppyBootCD](#extending-floppybootcd)
+- [Updating FloppyBootCD](#updating-floppybootcd)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [How it works under the hood](#how-it-works-under-the-hood)
@@ -53,11 +142,11 @@ operating systems boot exactly as they would from physical media.
 
 ---
 
-## Install uv (recommended)
+## Installing uv
 
 [uv](https://docs.astral.sh/uv/) is a fast Python package and project
-manager. It's the easiest way to get FloppyBootCD running because it
-manages its own Python and dependencies.
+manager. It manages its own Python and dependencies, so there's nothing to
+configure beyond the install line itself.
 
 ### macOS / Linux
 
@@ -111,32 +200,42 @@ command instead.)
 
 ---
 
-## Install FloppyBootCD
+## Installing FloppyBootCD
+
+FloppyBootCD is installed directly from this Git repository. It is not
+published to PyPI.
 
 ### With uv (recommended)
 
 Install once and run from anywhere:
 
 ```bash
-uv tool install floppybootcd
+uv tool install git+https://github.com/pacnpal/floppybootcd
 floppybootcd
 ```
 
 Or run without installing globally:
 
 ```bash
-uvx floppybootcd
+uvx --from git+https://github.com/pacnpal/floppybootcd floppybootcd
 ```
 
 `uvx` downloads, caches, and runs FloppyBootCD in an isolated environment.
 Subsequent runs use the cache.
 
-### With pip
-
-If you don't want uv, the standard pip path works fine:
+To install a specific tag or commit:
 
 ```bash
-python -m pip install --user floppybootcd
+uv tool install "git+https://github.com/pacnpal/floppybootcd@v0.1.0"
+uv tool install "git+https://github.com/pacnpal/floppybootcd@main"
+```
+
+### With pip
+
+If you don't want uv, the standard pip path works:
+
+```bash
+python -m pip install --user git+https://github.com/pacnpal/floppybootcd.git
 floppybootcd
 ```
 
@@ -146,7 +245,7 @@ Or with a virtual environment:
 python -m venv .venv
 source .venv/bin/activate          # macOS / Linux
 .venv\Scripts\activate             # Windows
-pip install floppybootcd
+pip install git+https://github.com/pacnpal/floppybootcd.git
 floppybootcd
 ```
 
@@ -167,19 +266,6 @@ FloppyBootCD uses `xorriso` to assemble the ISO. Install it once:
 The syslinux binaries (`isolinux.bin`, `memdisk`, `menu.c32`, and the
 required support modules) are downloaded automatically from kernel.org on
 first build and cached locally. No manual setup needed.
-
----
-
-## Quick start
-
-1. Launch FloppyBootCD
-2. Drag a few `.img` files onto the window (or click **Add Images**)
-3. Click each one and edit its menu label
-4. Pick one as the **default** entry
-5. Click **Save ISO...** to write a `.iso` file, or **Burn to Disc...** to
-   write directly to a blank CD-R / CD-RW
-
-That's the whole workflow.
 
 ---
 
@@ -446,6 +532,35 @@ my_burner = "my_pkg.burner:MyBurner"
 
 Subclass `BurnerBackend` from `floppybootcd/core/burner.py` and implement
 `is_available()`, `list_drives()`, and `burn()`.
+
+---
+
+## Updating FloppyBootCD
+
+To pull the latest version from the repo:
+
+```bash
+# With uv tool install
+uv tool upgrade floppybootcd
+
+# With pip
+pip install --user --upgrade --force-reinstall \
+    git+https://github.com/pacnpal/floppybootcd.git
+```
+
+`uvx` always runs the latest cached version; pass `--refresh` to re-pull
+from GitHub:
+
+```bash
+uvx --refresh --from git+https://github.com/pacnpal/floppybootcd floppybootcd
+```
+
+To uninstall:
+
+```bash
+uv tool uninstall floppybootcd       # if installed via uv
+pip uninstall floppybootcd           # if installed via pip
+```
 
 ---
 
