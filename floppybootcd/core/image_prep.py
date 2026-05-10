@@ -84,17 +84,28 @@ def _pick_inner_member(zf: zipfile.ZipFile, src_name: str) -> zipfile.ZipInfo:
     return candidates[0]
 
 
-def verify_imz_readable(path: str | Path) -> str | None:
-    """Return None if *path* is a fully readable ``.imz`` we can stage.
+def verify_imz_readable(path: str | Path) -> tuple[str | None, int]:
+    """Validate a ``.imz`` and return ``(error, inner_size)``.
 
-    Otherwise return a user-facing error string explaining why. The
-    returned string never repeats the source filename — callers are
-    expected to prefix their own context. This goes beyond
-    ``probe_uncompressed_size`` (which only reads the ZIP central
-    directory) by checking the inner member's encryption flag and
-    attempting a small read so the build doesn't fail mid-stage on
-    encrypted / password-protected archives or unsupported
-    compression methods.
+    On success, ``error`` is ``None`` and ``inner_size`` is the
+    uncompressed size of the inner floppy image in bytes — callers
+    (e.g. ``validate_project``) can reuse it without re-opening the
+    archive.
+
+    On failure, ``error`` is a user-facing string explaining why and
+    ``inner_size`` is 0. The returned string never repeats the source
+    filename — callers prefix their own context.
+
+    Checks performed:
+    - file is a real ZIP archive
+    - archive contains a floppy-image member
+    - inner member is not flagged as encrypted (general-purpose bit 0)
+    - inner member is non-empty
+    - inner member is openable and at least 1 byte is readable (this
+      surfaces ``NotImplementedError`` for unsupported compression
+      methods and most ``OSError`` failures; it does **not** verify
+      the full CRC, which zipfile only checks once a member is read
+      end-to-end)
     """
     p = Path(path)
     try:
@@ -105,18 +116,21 @@ def verify_imz_readable(path: str | Path) -> str | None:
                 return (
                     "inner image is encrypted (password-protected). "
                     "Re-save it from WinImage without a password, or "
-                    "extract the .ima first."
+                    "extract the .ima first.",
+                    0,
                 )
             # A 0-byte inner image is structurally readable but
             # non-bootable; reject up-front rather than producing an
             # empty staged .ima.
             if member.file_size == 0:
-                return "inner image is empty (0 bytes)."
+                return ("inner image is empty (0 bytes).", 0)
             # Attempt a small read to surface unsupported compression
-            # methods (NotImplementedError) and CRC issues now rather
-            # than during the build.
+            # methods (NotImplementedError) now rather than during the
+            # build. Note: this does not validate the inner member's
+            # CRC — zipfile only checks that on a full read.
             with zf.open(member) as fh:
                 fh.read(1)
+            return (None, member.file_size)
     except ValueError as e:
         # _open_imz / _pick_inner_member raise with a "{name}: ..."
         # prefix for callers like stage_image that want a standalone
@@ -126,7 +140,7 @@ def verify_imz_readable(path: str | Path) -> str | None:
         prefix = f"{p.name}: "
         if msg.startswith(prefix):
             msg = msg[len(prefix):]
-        return msg
+        return (msg, 0)
     except (
         zipfile.BadZipFile,
         OSError,
@@ -135,9 +149,9 @@ def verify_imz_readable(path: str | Path) -> str | None:
     ) as e:
         return (
             f"failed to read .imz ({e}). Re-save it from WinImage as "
-            "'Compressed image file' or extract the .ima first."
+            "'Compressed image file' or extract the .ima first.",
+            0,
         )
-    return None
 
 
 def stage_image(src: str | Path, dest_dir: str | Path, dest_name: str) -> Path:

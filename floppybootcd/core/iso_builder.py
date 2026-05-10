@@ -80,18 +80,13 @@ def validate_project(project: Project) -> list[str]:
             problems.append(f"Image {i} ({p.name}) is empty.")
             continue
         if image_prep.is_compressed(p):
-            err = image_prep.verify_imz_readable(p)
+            err, inner_size = image_prep.verify_imz_readable(p)
             if err is not None:
                 problems.append(f"Image {i} ({p.name}): {err}")
                 continue
-            effective_size = image_prep.probe_uncompressed_size(p)
-            if effective_size == 0:
-                # Archive is readable but the inner image is zero
-                # bytes — mirror the raw-image empty rejection.
-                problems.append(
-                    f"Image {i} ({p.name}): inner image is empty."
-                )
-                continue
+            # verify_imz_readable already rejects empty inner images,
+            # so inner_size is guaranteed > 0 here.
+            effective_size = inner_size
         else:
             effective_size = size
         # Floppy images aren't strictly required to be 1.44/2.88, but warn on

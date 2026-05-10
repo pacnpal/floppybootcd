@@ -88,8 +88,7 @@ class ImageListWidget(QListWidget):
         item = QListWidgetItem(self._format_label(img))
         item.setData(Qt.ItemDataRole.UserRole, img)
         item.setToolTip(img.path)
-        if not img.exists:
-            item.setForeground(Qt.GlobalColor.red)
+        self._apply_exists_color(item, img)
         self.addItem(item)
 
     def update_item(self, row: int) -> None:
@@ -99,6 +98,18 @@ class ImageListWidget(QListWidget):
         img: FloppyImage = item.data(Qt.ItemDataRole.UserRole)
         item.setText(self._format_label(img))
         item.setToolTip(img.path)
+        self._apply_exists_color(item, img)
+
+    @staticmethod
+    def _apply_exists_color(item: QListWidgetItem, img: FloppyImage) -> None:
+        """Tint missing-file rows red; restore the default brush when
+        the file is present again. Without the clear branch, an item
+        edited from missing→present would stay red."""
+        if not img.exists:
+            item.setForeground(Qt.GlobalColor.red)
+        else:
+            # Reset to the view's default text color.
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
 
     def get_images(self) -> list[FloppyImage]:
         return [self.item(i).data(Qt.ItemDataRole.UserRole)

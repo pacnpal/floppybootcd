@@ -186,8 +186,8 @@ class MainWindow(QMainWindow):
         )
         self.statusBar().addPermanentWidget(self.capacity_label)
         self._update_selection_buttons()
-        # _refresh_burn_button() also refreshes the capacity label.
         self._refresh_burn_button()
+        self._refresh_capacity_label()
 
     def _build_menus(self) -> None:
         m_file = self.menuBar().addMenu("&File")
@@ -277,7 +277,10 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
 
     def _on_menu_style_changed(self) -> None:
+        # Switching to/from VESA changes whether the background image
+        # counts against capacity, so refresh that indicator.
         self.project.menu_style = self.menu_style_combo.currentData()
+        self._refresh_capacity_label()
         self._mark_dirty()
 
     def _on_bootloader_changed(self) -> None:
@@ -409,6 +412,7 @@ class MainWindow(QMainWindow):
         self._dirty = False
         self._update_title()
         self._refresh_burn_button()
+        self._refresh_capacity_label()
 
     # ── Image operations ─────────────────────────────────────────────────────────
 
@@ -433,6 +437,7 @@ class MainWindow(QMainWindow):
             self.list_widget.add_image(img)
         self.project.ensure_one_default()
         self._refresh_default_marker()
+        self._refresh_capacity_label()
         self._mark_dirty()
 
     def _remove_selected(self) -> None:
@@ -441,6 +446,7 @@ class MainWindow(QMainWindow):
             self.project.images = self.list_widget.get_images()
             self.project.ensure_one_default()
             self._refresh_default_marker()
+            self._refresh_capacity_label()
             self._mark_dirty()
 
     def _edit_selected(self) -> None:
@@ -484,7 +490,6 @@ class MainWindow(QMainWindow):
         ready = bool(self.project.images)
         self.save_iso_btn.setEnabled(ready)
         self.burn_btn.setEnabled(ready)
-        self._refresh_capacity_label()
 
     def _refresh_capacity_label(self) -> None:
         """Update the status bar's running total / CD capacity indicator."""
