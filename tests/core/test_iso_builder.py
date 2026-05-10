@@ -104,6 +104,42 @@ class TestValidateProject:
         problems = validate_project(p)
         assert any("unusually large" in s for s in problems)
 
+    def test_total_payload_within_capacity_no_problem(self, tmp_path):
+        f = tmp_path / "ok.img"
+        f.write_bytes(b"\0" * (1440 * 1024))
+        p = Project(images=[FloppyImage(path=str(f))])
+        assert validate_project(p) == []
+
+    def test_total_payload_exceeding_cd_capacity_reported(
+        self, tmp_path, monkeypatch
+    ):
+        # Shrink the usable capacity for the test rather than allocating
+        # a real 700 MB worth of files. Patch via the iso_builder module
+        # since validate_project reads the constant through image_prep.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 4096)
+        f = tmp_path / "big.img"
+        f.write_bytes(b"\0" * 8192)  # 8 KB > 4 KB usable
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("exceeds" in s and "CD-R" in s for s in problems)
+
+    def test_imz_inner_size_counts_against_capacity(
+        self, tmp_path, monkeypatch
+    ):
+        # A tiny-on-disk .imz with a large inner image should be flagged
+        # by capacity check based on the inner uncompressed size.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 4096)
+        f = tmp_path / "huge.imz"
+        with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inner.ima", b"\0" * 8192)
+        # The .imz on disk is well under 4 KB; only the inner is over.
+        assert f.stat().st_size < 4096
+        p = Project(images=[FloppyImage(path=str(f))])
+        problems = validate_project(p)
+        assert any("exceeds" in s and "CD-R" in s for s in problems)
+
     def test_text_menu_ignores_background(self, tmp_path):
         f = tmp_path / "ok.img"
         f.write_bytes(b"\0" * 1024)

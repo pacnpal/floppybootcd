@@ -146,3 +146,54 @@ class TestProbeUncompressedSize:
         with zipfile.ZipFile(src, "w") as zf:
             zf.writestr("readme.txt", b"hello")
         assert image_prep.probe_uncompressed_size(src) == 0
+
+
+# ── total_payload_size ──────────────────────────────────────────────────────
+
+class TestTotalPayloadSize:
+    def test_empty_iterable_returns_zero(self):
+        assert image_prep.total_payload_size([]) == 0
+
+    def test_sums_raw_image_sizes(self, tmp_path):
+        a = tmp_path / "a.img"
+        b = tmp_path / "b.img"
+        a.write_bytes(b"x" * 1000)
+        b.write_bytes(b"y" * 2500)
+        assert image_prep.total_payload_size([a, b]) == 3500
+
+    def test_uses_inner_size_for_imz(self, tmp_path):
+        # Tiny-on-disk archive with a relatively large inner image.
+        src = tmp_path / "boot.imz"
+        with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inner.ima", b"\0" * 1440 * 1024)
+        # Sanity: archive much smaller than inner.
+        assert src.stat().st_size < 100 * 1024
+        assert image_prep.total_payload_size([src]) == 1440 * 1024
+
+    def test_mixes_raw_and_imz(self, tmp_path):
+        raw = tmp_path / "a.img"
+        raw.write_bytes(b"\0" * 1024)
+        imz = tmp_path / "b.imz"
+        with zipfile.ZipFile(imz, "w") as zf:
+            zf.writestr("b.ima", b"\0" * 4096)
+        assert image_prep.total_payload_size([raw, imz]) == 1024 + 4096
+
+    def test_missing_files_contribute_zero(self, tmp_path):
+        ok = tmp_path / "ok.img"
+        ok.write_bytes(b"\0" * 500)
+        assert image_prep.total_payload_size(
+            [ok, tmp_path / "missing.img"]
+        ) == 500
+
+
+class TestCdCapacityConstants:
+    def test_cd_r_capacity_is_700_mib(self):
+        assert image_prep.CD_R_CAPACITY_BYTES == 700 * 1024 * 1024
+
+    def test_overhead_is_subtracted_from_usable(self):
+        assert image_prep.CD_USABLE_BYTES == (
+            image_prep.CD_R_CAPACITY_BYTES - image_prep.CD_OVERHEAD_BYTES
+        )
+
+    def test_usable_is_positive_and_below_total(self):
+        assert 0 < image_prep.CD_USABLE_BYTES < image_prep.CD_R_CAPACITY_BYTES

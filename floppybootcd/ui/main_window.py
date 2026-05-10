@@ -18,6 +18,7 @@ from ..core import iso_builder, syslinux_fetcher
 from ..core.bootloader import BUILTIN_BACKENDS, available_backends
 from ..core.project import FloppyImage, Project
 from .burn_dialog import BurnDialog
+from ..core import image_prep
 from ..core.image_prep import ALL_ACCEPTED_EXTS
 from .image_list import ImageListWidget
 
@@ -176,8 +177,17 @@ class MainWindow(QMainWindow):
         outer.addWidget(bottom)
 
         self.setStatusBar(QStatusBar())
+        self.capacity_label = QLabel()
+        self.capacity_label.setToolTip(
+            "Total floppy payload that will be written to the disc, "
+            "vs. the usable capacity of a 700 MB CD-R after bootloader "
+            "and ISO 9660 overhead. Compressed (.imz) images count by "
+            "their uncompressed size."
+        )
+        self.statusBar().addPermanentWidget(self.capacity_label)
         self._update_selection_buttons()
         self._refresh_burn_button()
+        self._refresh_capacity_label()
 
     def _build_menus(self) -> None:
         m_file = self.menuBar().addMenu("&File")
@@ -474,6 +484,27 @@ class MainWindow(QMainWindow):
         ready = bool(self.project.images)
         self.save_iso_btn.setEnabled(ready)
         self.burn_btn.setEnabled(ready)
+        self._refresh_capacity_label()
+
+    def _refresh_capacity_label(self) -> None:
+        """Update the status bar's running total / CD capacity indicator."""
+        used = image_prep.total_payload_size(
+            img.path for img in self.project.images
+        )
+        usable = image_prep.CD_USABLE_BYTES
+        used_mb = used / (1024 * 1024)
+        usable_mb = usable / (1024 * 1024)
+        text = f"Disc usage: {used_mb:.1f} MB / {usable_mb:.0f} MB"
+        if used > usable:
+            text += "  ⚠ over CD-R capacity"
+            color = "color: #b00020;"
+        elif used > usable * 0.9:
+            text += "  (near limit)"
+            color = "color: #b35900;"
+        else:
+            color = ""
+        self.capacity_label.setText(text)
+        self.capacity_label.setStyleSheet(color)
 
     # ── ISO build / burn ────────────────────────────────────────────────────────
 

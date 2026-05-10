@@ -119,14 +119,16 @@ class TestDropEventAccepts:
             zf.writestr("boot.ima", b"x")
         with qtbot.waitSignal(widget.files_dropped, timeout=1000) as blocker:
             self._drop(widget, qtbot, [f])
-        assert blocker.args[0] == [str(f)]
+        # QUrl.toLocalFile() yields forward slashes on Windows; compare
+        # path-normalized to avoid backslash-vs-forward-slash mismatches.
+        assert [Path(p) for p in blocker.args[0]] == [f]
 
     def test_raw_img_drop_emits_files_dropped(self, widget, tmp_path, qtbot):
         f = tmp_path / "boot.img"
         f.write_bytes(b"x")
         with qtbot.waitSignal(widget.files_dropped, timeout=1000) as blocker:
             self._drop(widget, qtbot, [f])
-        assert blocker.args[0] == [str(f)]
+        assert [Path(p) for p in blocker.args[0]] == [f]
 
     def test_unknown_extension_drop_does_not_emit(
         self, widget, tmp_path, qtbot

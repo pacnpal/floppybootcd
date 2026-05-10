@@ -25,6 +25,14 @@ COMPRESSED_EXTS: frozenset[str] = frozenset({".imz"})
 # Everything the UI is willing to accept (file dialog + drag-drop).
 ALL_ACCEPTED_EXTS: frozenset[str] = FLOPPY_EXTS | COMPRESSED_EXTS
 
+# Capacity of a standard 80-minute CD-R, in bytes (700 MiB). The real
+# usable size after the ISO 9660 / Joliet / Rock Ridge directory
+# overhead and the bootloader payload is slightly less; we reserve a
+# small headroom margin for that.
+CD_R_CAPACITY_BYTES: int = 700 * 1024 * 1024
+CD_OVERHEAD_BYTES: int = 8 * 1024 * 1024  # ISO metadata + isolinux + memdisk
+CD_USABLE_BYTES: int = CD_R_CAPACITY_BYTES - CD_OVERHEAD_BYTES
+
 
 def is_compressed(path: str | Path) -> bool:
     """True if *path* names a compressed floppy container we extract."""
@@ -90,10 +98,15 @@ def stage_image(src: str | Path, dest_dir: str | Path, dest_name: str) -> Path:
                 member = _pick_inner_member(zf, src_path.name)
                 with zf.open(member) as inp, open(dest, "wb") as out:
                     shutil.copyfileobj(inp, out)
-        except (zipfile.BadZipFile, OSError) as e:
+        except (
+            zipfile.BadZipFile,
+            OSError,
+            RuntimeError,            # encrypted/password-protected member
+            NotImplementedError,     # unsupported compression method
+        ) as e:
             # is_zipfile() can pass and a later read still fail (truncated
-            # archive, bad CRC, unsupported compression). Convert to the
-            # same user-facing message validate_project / _open_imz use.
+            # archive, bad CRC, encrypted member, unsupported compression).
+            # Convert to the same user-facing message _open_imz uses.
             raise ValueError(
                 f"{src_path.name}: failed to extract .imz "
                 f"({e}). Re-save it from WinImage as 'Compressed image "
@@ -102,6 +115,16 @@ def stage_image(src: str | Path, dest_dir: str | Path, dest_name: str) -> Path:
         return dest
     shutil.copy2(src_path, dest)
     return dest
+
+
+def total_payload_size(paths) -> int:
+    """Sum the effective floppy-image bytes across *paths*.
+
+    For ``.imz`` containers this counts the *uncompressed* inner image
+    size (what actually lands on the burned disc), not the archive
+    size on disk. Missing or unreadable files contribute 0.
+    """
+    return sum(probe_uncompressed_size(p) for p in paths)
 
 
 def probe_uncompressed_size(path: str | Path) -> int:
