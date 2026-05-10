@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import QSettings
 
 from floppybootcd.core.project import FloppyImage, Project
 from floppybootcd.ui.main_window import MainWindow
@@ -11,7 +12,15 @@ from floppybootcd.ui.main_window import MainWindow
 
 @pytest.fixture
 def win(qtbot, tmp_path, monkeypatch):
-    # Isolate QSettings into a temp location (Linux uses XDG_CONFIG_HOME).
+    # Isolate QSettings to a temp INI file. XDG_CONFIG_HOME alone only works
+    # on Linux — Windows uses the registry, macOS uses plists. Forcing
+    # IniFormat + a custom path covers all three.
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(
+        QSettings.Format.IniFormat,
+        QSettings.Scope.UserScope,
+        str(tmp_path / "qsettings"),
+    )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     w = MainWindow()

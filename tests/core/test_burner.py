@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import re
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -41,7 +42,7 @@ class TestRunStreaming:
         """Run a tiny subprocess and verify logs flow through."""
         logs: list[str] = []
         rc = _run_streaming(
-            ["python3", "-c", "print('hello'); print('world')"],
+            [sys.executable, "-c", "print('hello'); print('world')"],
             log=logs.append,
         )
         assert rc == 0
@@ -51,7 +52,7 @@ class TestRunStreaming:
     def test_progress_regex_extracts_percentage(self):
         progress_calls: list[tuple[str, float]] = []
         rc = _run_streaming(
-            ["python3", "-c", "print('Track 01: 50 of 100 MB')"],
+            [sys.executable, "-c", "print('Track 01: 50 of 100 MB')"],
             log=lambda _: None,
             progress=lambda m, f: progress_calls.append((m, f)),
             progress_re=re.compile(r"(\d+) of \d+ MB"),
@@ -64,7 +65,7 @@ class TestRunStreaming:
 
     def test_nonzero_exit_returned(self):
         rc = _run_streaming(
-            ["python3", "-c", "import sys; sys.exit(7)"],
+            [sys.executable, "-c", "import sys; sys.exit(7)"],
             log=lambda _: None,
         )
         assert rc == 7
@@ -93,11 +94,10 @@ class TestLinuxBurnerListDrives:
             raise FileNotFoundError
 
         monkeypatch.setattr(subprocess, "run", boom)
-        # /dev/sr0 exists, others don't
-        monkeypatch.setattr(
-            Path, "exists",
-            lambda self: str(self) == "/dev/sr0",
-        )
+        # /dev/sr0 exists, others don't. Compare via Path equality so the
+        # mock works on Windows where str(Path("/dev/sr0")) uses backslashes.
+        target = Path("/dev/sr0")
+        monkeypatch.setattr(Path, "exists", lambda self: self == target)
         drives = LinuxBurner().list_drives()
         assert any(d.device == "/dev/sr0" for d in drives)
 
