@@ -369,20 +369,33 @@ class MainWindow(QMainWindow):
         return self._save_project()
 
     def _reload_from_project(self) -> None:
-        self.title_edit.setText(self.project.title)
-        # Find combo entries by data
-        for combo, value in (
-            (self.bootloader_combo, self.project.bootloader),
-            (self.menu_style_combo, self.project.menu_style),
-        ):
-            for i in range(combo.count()):
-                if combo.itemData(i) == value:
-                    combo.setCurrentIndex(i)
-                    break
-        self.timeout_spin.setValue(self.project.timeout_secs)
+        # Block signals while we push project state into the widgets — the
+        # textChanged / currentIndexChanged / valueChanged handlers all
+        # call _mark_dirty(), which would otherwise flag a freshly-loaded
+        # project as having unsaved changes.
+        widgets = [
+            self.title_edit, self.bootloader_combo,
+            self.menu_style_combo, self.timeout_spin,
+        ]
+        prev = [w.blockSignals(True) for w in widgets]
+        try:
+            self.title_edit.setText(self.project.title)
+            for combo, value in (
+                (self.bootloader_combo, self.project.bootloader),
+                (self.menu_style_combo, self.project.menu_style),
+            ):
+                for i in range(combo.count()):
+                    if combo.itemData(i) == value:
+                        combo.setCurrentIndex(i)
+                        break
+            self.timeout_spin.setValue(self.project.timeout_secs)
+        finally:
+            for w, p in zip(widgets, prev):
+                w.blockSignals(p)
         self.list_widget.clear()
         for img in self.project.images:
             self.list_widget.add_image(img)
+        self._dirty = False
         self._update_title()
         self._refresh_burn_button()
 

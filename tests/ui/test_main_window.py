@@ -12,27 +12,26 @@ from floppybootcd.ui.main_window import MainWindow
 
 @pytest.fixture
 def win(qtbot, tmp_path, monkeypatch):
-    # Isolate QSettings to a temp INI file. XDG_CONFIG_HOME alone only works
-    # on Linux — Windows uses the registry, macOS uses plists. Forcing
-    # IniFormat + a custom path covers all three.
-    prev_default = QSettings.defaultFormat()
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    QSettings.setPath(
-        QSettings.Format.IniFormat,
-        QSettings.Scope.UserScope,
-        str(tmp_path / "qsettings"),
-    )
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    # Replace the QSettings symbol that MainWindow constructs so we don't
+    # mutate process-wide QSettings defaults / paths (which have no public
+    # restore for setPath, so they would leak across tests in the same
+    # interpreter). The replacement always points at a tmp INI file.
+    import floppybootcd.ui.main_window as mw_mod
+
+    ini_path = str(tmp_path / "settings.ini")
+
+    class IsolatedQSettings(QSettings):
+        def __init__(self, *_args, **_kwargs):
+            super().__init__(ini_path, QSettings.Format.IniFormat)
+
+    monkeypatch.setattr(mw_mod, "QSettings", IsolatedQSettings)
+
     w = MainWindow()
     # closeEvent() pops a modal "Unsaved changes?" dialog when dirty, which
     # hangs at qtbot teardown. Bypass the prompt for tests.
     monkeypatch.setattr(w, "_maybe_save", lambda: True)
     qtbot.addWidget(w)
     yield w
-    # Restore global QSettings defaults so this fixture doesn't leak into
-    # other tests sharing the process.
-    QSettings.setDefaultFormat(prev_default)
 
 
 class TestMainWindowAddPaths:
@@ -127,6 +126,44 @@ class TestProjectIO:
         assert win._dirty is True
 
 
+class TestReloadDoesNotMarkDirty:
+    """Regression: programmatic widget setters in _reload_from_project()
+    used to fire textChanged / currentIndexChanged / valueChanged, which
+    flipped _dirty=True so a freshly loaded or new project pretended to
+    have unsaved changes. Block signals during reload."""
+
+    def test_loading_project_leaves_clean_state(self, win, tmp_path):
+        proj = Project(
+            title="Loaded", bootloader="isolinux",
+            menu_style="vesa", timeout_secs=42,
+        )
+        out = tmp_path / "p.fbcd"
+        proj.save(out)
+
+        # Sanity: dirty something so we can see the flip.
+        win.title_edit.setText("dirtyfirst")
+        assert win._dirty is True
+
+        # Replicate the load-and-reload sequence from _open_project without
+        # the file dialog.
+        win.project = Project.load(out)
+        win.project_path = out
+        win._dirty = False
+        win._reload_from_project()
+
+        assert win._dirty is False
+        assert win.title_edit.text() == "Loaded"
+        assert win.timeout_spin.value() == 42
+        assert win.menu_style_combo.currentData() == "vesa"
+
+    def test_new_project_leaves_clean_state(self, win):
+        win.title_edit.setText("not new")
+        assert win._dirty is True
+        win.project = Project()
+        win._reload_from_project()
+        assert win._dirty is False
+
+
 class TestProjectSyncOnUIChange:
     """Regression: UI controls must write through to self.project AND mark
     dirty, otherwise edits are silently lost on Save Project."""
@@ -160,16 +197,18 @@ class TestProjectSyncOnUIChange:
 
 
 class TestXorrisoPathSetting:
-    def test_value_is_threaded_into_build_options(self, win, tmp_path):
+    def test_value_is_threaded_into_build_options(self, win, tmp_path, monkeypatch):
         win.settings.setValue("xorriso_path", "/opt/custom/xorriso")
         f = tmp_path / "a.img"
         f.write_bytes(b"x")
         win._add_paths([str(f)])
 
         # Capture the BuildOptions handed to the worker without actually
-        # building. Patch QThread.start so the worker never runs.
+        # building. Use monkeypatch (auto-restored) to neutralize QThread
+        # so the worker never runs and BuildOptions so we can inspect it.
         captured: dict = {}
         from floppybootcd.core import iso_builder
+        from PySide6.QtCore import QThread
 
         real_options = iso_builder.BuildOptions
 
@@ -179,14 +218,9 @@ class TestXorrisoPathSetting:
             return opts
 
         import floppybootcd.ui.main_window as mw_mod
-        original = mw_mod.iso_builder.BuildOptions
-        mw_mod.iso_builder.BuildOptions = spy_options
-        try:
-            from PySide6.QtCore import QThread
-            QThread.start = lambda self, *a, **k: None  # type: ignore[assignment]
-            win._build_iso(tmp_path / "out.iso", then_burn=False)
-        finally:
-            mw_mod.iso_builder.BuildOptions = original
+        monkeypatch.setattr(mw_mod.iso_builder, "BuildOptions", spy_options)
+        monkeypatch.setattr(QThread, "start", lambda self, *a, **k: None)
+        win._build_iso(tmp_path / "out.iso", then_burn=False)
 
         assert captured["opts"].xorriso_override == "/opt/custom/xorriso"
 
