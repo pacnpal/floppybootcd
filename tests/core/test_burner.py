@@ -50,18 +50,21 @@ class TestRunStreaming:
         assert "world" in logs
 
     def test_progress_regex_extracts_percentage(self):
+        # _run_streaming treats group(1) as a 0-100 percent literal and
+        # divides by 100, so feed it real percent output rather than an
+        # "X of Y" pair (the latter would only happen to be right when Y
+        # equals 100).
         progress_calls: list[tuple[str, float]] = []
         rc = _run_streaming(
-            [sys.executable, "-c", "print('Track 01: 50 of 100 MB')"],
+            [sys.executable, "-c", "print('progress 42%')"],
             log=lambda _: None,
             progress=lambda m, f: progress_calls.append((m, f)),
-            progress_re=re.compile(r"(\d+) of \d+ MB"),
+            progress_re=re.compile(r"progress (\d+)%"),
         )
         assert rc == 0
         assert progress_calls
-        # 50 / 100 → 0.5
         _, frac = progress_calls[0]
-        assert frac == pytest.approx(0.5)
+        assert frac == pytest.approx(0.42)
 
     def test_nonzero_exit_returned(self):
         rc = _run_streaming(
