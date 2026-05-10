@@ -106,11 +106,16 @@ def validate_project(project: Project) -> list[str]:
             problems.append(f"Background image not found: {project.background_image}")
 
     # Capacity check: the on-disc size of the floppy payload (using the
-    # *uncompressed* inner size for any .imz containers) must fit on a
-    # CD-R after the bootloader / ISO 9660 overhead.
+    # *uncompressed* inner size for any .imz containers) plus the VESA
+    # background image (when used) must fit on a CD-R after the
+    # bootloader / ISO 9660 overhead.
     total = image_prep.total_payload_size(
         img.path for img in project.images if Path(img.path).is_file()
     )
+    if project.menu_style == "vesa" and project.background_image:
+        bg = Path(project.background_image)
+        if bg.is_file():
+            total += bg.stat().st_size
     if total > image_prep.CD_USABLE_BYTES:
         problems.append(
             f"Total floppy payload is "

@@ -124,6 +124,44 @@ class TestValidateProject:
         problems = validate_project(p)
         assert any("exceeds" in s and "CD-R" in s for s in problems)
 
+    def test_vesa_background_counts_against_capacity(
+        self, tmp_path, monkeypatch
+    ):
+        # The VESA background image is staged onto the ISO, so it
+        # should count against the CD-R budget.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 8192)
+        f = tmp_path / "ok.img"
+        f.write_bytes(b"\0" * 4096)  # under capacity on its own
+        bg = tmp_path / "bg.png"
+        bg.write_bytes(b"\0" * 8192)  # pushes total over capacity
+        p = Project(
+            menu_style="vesa",
+            background_image=str(bg),
+            images=[FloppyImage(path=str(f))],
+        )
+        problems = validate_project(p)
+        assert any("exceeds" in s and "CD-R" in s for s in problems)
+
+    def test_text_menu_ignores_background_for_capacity(
+        self, tmp_path, monkeypatch
+    ):
+        # In text-menu mode the background image isn't staged, so a
+        # huge background must not trip the capacity check.
+        from floppybootcd.core import image_prep as ip
+        monkeypatch.setattr(ip, "CD_USABLE_BYTES", 8192)
+        f = tmp_path / "ok.img"
+        f.write_bytes(b"\0" * 4096)
+        bg = tmp_path / "bg.png"
+        bg.write_bytes(b"\0" * 1024 * 1024)
+        p = Project(
+            menu_style="text",
+            background_image=str(bg),
+            images=[FloppyImage(path=str(f))],
+        )
+        # No problems — capacity ignores the background in text mode.
+        assert validate_project(p) == []
+
     def test_imz_inner_size_counts_against_capacity(
         self, tmp_path, monkeypatch
     ):

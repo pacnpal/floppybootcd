@@ -55,12 +55,34 @@ class TestImageListWidget:
         assert widget.remove_selected() == 2
         assert widget.count() == 1
 
-    def test_format_label_includes_size_kb(self):
-        # Non-existent file → size_bytes returns 0, formatter shows "0 KB".
+    def test_format_label_includes_size_kb(self, tmp_path):
+        f = tmp_path / "a.img"
+        f.write_bytes(b"\0" * 1024)  # 1 KB
+        img = FloppyImage(path=str(f))
+        text = ImageListWidget._format_label(img)
+        assert "1 KB" in text
+        assert "a.img" in text
+
+    def test_format_label_missing_file_shows_missing(self):
         img = FloppyImage(path="/x/a.img")
         text = ImageListWidget._format_label(img)
-        assert "0 KB" in text
+        assert "missing" in text
         assert "a.img" in text
+
+    def test_format_label_missing_imz_shows_missing_not_invalid(self):
+        # A missing .imz must NOT be reported as "invalid .imz" — that
+        # message is reserved for files that exist but fail to probe.
+        img = FloppyImage(path="/x/missing.imz")
+        text = ImageListWidget._format_label(img)
+        assert "missing" in text
+        assert "invalid" not in text
+
+    def test_format_label_invalid_imz_shows_invalid(self, tmp_path):
+        f = tmp_path / "broken.imz"
+        f.write_bytes(b"this is not a zip")  # exists but won't probe
+        img = FloppyImage(path=str(f))
+        text = ImageListWidget._format_label(img)
+        assert "invalid .imz" in text
 
     def test_format_label_shows_default_star(self):
         img = FloppyImage(path="/x/a.img", default=True, label="Boot")

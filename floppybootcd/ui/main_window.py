@@ -186,8 +186,8 @@ class MainWindow(QMainWindow):
         )
         self.statusBar().addPermanentWidget(self.capacity_label)
         self._update_selection_buttons()
+        # _refresh_burn_button() also refreshes the capacity label.
         self._refresh_burn_button()
-        self._refresh_capacity_label()
 
     def _build_menus(self) -> None:
         m_file = self.menuBar().addMenu("&File")
@@ -491,6 +491,12 @@ class MainWindow(QMainWindow):
         used = image_prep.total_payload_size(
             img.path for img in self.project.images
         )
+        # Match validate_project: the VESA background image is also
+        # staged onto the disc, so it counts against the budget.
+        if self.project.menu_style == "vesa" and self.project.background_image:
+            bg = Path(self.project.background_image)
+            if bg.is_file():
+                used += bg.stat().st_size
         usable = image_prep.CD_USABLE_BYTES
         used_mib = used / (1024 * 1024)
         usable_mib = usable / (1024 * 1024)

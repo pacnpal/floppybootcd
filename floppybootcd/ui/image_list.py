@@ -127,10 +127,12 @@ class ImageListWidget(QListWidget):
     def _format_label(img: FloppyImage) -> str:
         # Show the floppy's real (uncompressed) size for .imz containers
         # so the column reflects what the OS will see, not the archive.
-        # If a .imz fails to probe (corrupt / encrypted), show "?" rather
-        # than the misleading on-disk archive size.
+        # Distinguish a missing file from a corrupt/encrypted .imz so the
+        # user knows whether to fix the path or re-export the archive.
         ext = Path(img.path).suffix.lower()
-        if ext in COMPRESSED_EXTS:
+        if not img.exists:
+            size_str = "missing"
+        elif ext in COMPRESSED_EXTS:
             inner = probe_uncompressed_size(img.path)
             if inner == 0:
                 size_str = "? (invalid .imz)"
