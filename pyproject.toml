@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "floppybootcd"
+version = "0.1.0"
+description = "Build bootable CDs from collections of floppy disk images"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "pacnpal" }]
+requires-python = ">=3.10"
+classifiers = [
+  "Environment :: X11 Applications :: Qt",
+  "Environment :: MacOS X",
+  "Environment :: Win32 (MS Windows)",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Boot",
+]
+dependencies = [
+  "PySide6>=6.6",
+]
+
+[project.scripts]
+floppybootcd = "floppybootcd.app:main"
+
+[project.gui-scripts]
+floppybootcd-gui = "floppybootcd.app:main"
+
+[project.entry-points."floppybootcd.bootloaders"]
+isolinux = "floppybootcd.core.bootloader:IsolinuxBackend"
+
+[project.entry-points."floppybootcd.burners"]
+macos = "floppybootcd.core.burner:MacOSBurner"
+windows = "floppybootcd.core.burner:WindowsBurner"
+linux = "floppybootcd.core.burner:LinuxBurner"
+
+[project.urls]
+Homepage = "https://github.com/pacnpal/floppybootcd"
+
+[tool.hatch.build.targets.wheel]
+packages = ["floppybootcd"]
