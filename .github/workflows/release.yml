@@ -19,25 +19,97 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Stage the Windows xorriso bundle ONCE on a windows-latest runner. The same
+  # x86_64 binary is used by both the windows-x86_64 build (native) and the
+  # windows-arm64 build (under Windows on ARM x64 emulation). Doing it here
+  # avoids running MSYS2 on the windows-11-arm runner, where setup-msys2 is
+  # not officially supported.
+  prep-xorriso-windows:
+    name: Prep xorriso (Windows x86_64, shared with ARM64)
+    runs-on: windows-latest
+    steps:
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-libisoburn
+
+      - name: Stage xorriso bundle
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p staging-xorriso/bin
+          cp /mingw64/bin/xorriso.exe staging-xorriso/bin/
+          # Copy every MinGW DLL xorriso depends on. System DLLs (kernel32 etc.)
+          # come from Windows itself, so filter to /mingw64/.
+          ldd /mingw64/bin/xorriso.exe \
+            | grep -i 'mingw64' \
+            | awk '{print $3}' \
+            | while read -r dll; do
+                [ -f "$dll" ] && cp -f "$dll" staging-xorriso/bin/
+              done
+          ./staging-xorriso/bin/xorriso.exe -version | head -3
+
+      - name: Upload Windows xorriso bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: xorriso-windows-bundle
+          path: staging-xorriso/
+          retention-days: 1
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.label }})
+    needs: [prep-xorriso-windows]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Linux x86_64 — ubuntu-22.04 for glibc 2.35 baseline.
+          # PySide6 manylinux_2_34_x86_64 wheel needs glibc >= 2.34, so 22.04
+          # is the lowest LTS we can build on. Covers Debian 12 (Bookworm,
+          # 2.36), Raspberry Pi OS Bookworm (2.36), Ubuntu 22.04+ (2.35),
+          # RHEL/Rocky/Alma 9 (2.34), Fedora 36+ (2.35+), and most other
+          # modern distros.
+          - os: ubuntu-22.04
             label: linux-x86_64
             artifact_ext: tar.gz
+            xorriso_method: linux
+          # Linux ARM64 — ubuntu-24.04-arm for glibc 2.39 baseline.
+          # PySide6 manylinux_2_39_aarch64 wheel needs glibc >= 2.39, so
+          # ubuntu-22.04-arm (2.35) cannot install it. Covers Ubuntu 24.04+
+          # (2.39), Debian 13 Trixie+ (2.40), Fedora 40+ (2.39), RHEL 10+,
+          # and Raspberry Pi OS Trixie when it ships. Older Pi OS releases
+          # (Bookworm, glibc 2.36) need install-from-source via uv +
+          # piwheels — see README.
+          - os: ubuntu-24.04-arm
+            label: linux-arm64
+            artifact_ext: tar.gz
+            xorriso_method: linux
+          # macOS Intel
           - os: macos-15-intel
             label: macos-x86_64
             artifact_ext: zip
+            xorriso_method: macos
+          # macOS Apple Silicon
           - os: macos-15
             label: macos-arm64
             artifact_ext: zip
+            xorriso_method: macos
+          # Windows x86_64 — pulls staged xorriso from prep-xorriso-windows.
           - os: windows-latest
             label: windows-x86_64
             artifact_ext: zip
+            xorriso_method: windows-shared
+          # Windows ARM64 — also pulls the x86_64 xorriso bundle. Windows on
+          # ARM ships an x64 emulator, so the x86_64 xorriso.exe runs fine
+          # under emulation for our subprocess use case.
+          - os: windows-11-arm
+            label: windows-arm64
+            artifact_ext: zip
+            xorriso_method: windows-shared
 
     steps:
       - name: Check out source
@@ -50,6 +122,67 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # ── xorriso staging ─────────────────────────────────────────────────
+
+      - name: Stage xorriso (Linux)
+        if: matrix.xorriso_method == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xorriso patchelf
+          mkdir -p staging-xorriso/bin/lib
+          cp /usr/bin/xorriso staging-xorriso/bin/xorriso
+          chmod +x staging-xorriso/bin/xorriso
+          # Copy every non-glibc shared library xorriso loads. glibc-family
+          # libs (libc, ld-linux, libpthread, libdl, libm, librt, libnsl,
+          # vdso) are left to the host so we don't ship a glibc that
+          # mismatches the kernel.
+          ldd staging-xorriso/bin/xorriso \
+            | awk '/=> \//{print $3}' \
+            | while read -r lib; do
+                base=$(basename "$lib")
+                case "$base" in
+                  libc.so.*|ld-linux*|libpthread.so.*|libdl.so.*|libm.so.*|librt.so.*|libnsl.so.*|linux-vdso.so.*)
+                    ;;
+                  *)
+                    cp -L "$lib" staging-xorriso/bin/lib/
+                    ;;
+                esac
+              done
+          # Make the binary find its bundled libs without LD_LIBRARY_PATH.
+          patchelf --set-rpath '$ORIGIN/lib' staging-xorriso/bin/xorriso
+          # Inter-library deps inside lib/ resolve via $ORIGIN.
+          for so in staging-xorriso/bin/lib/*; do
+            [ -f "$so" ] && patchelf --set-rpath '$ORIGIN' "$so" || true
+          done
+          # Sanity check: launch xorriso once via its bundled libs.
+          ./staging-xorriso/bin/xorriso -version | head -3
+
+      - name: Stage xorriso (macOS)
+        if: matrix.xorriso_method == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install xorriso dylibbundler
+          mkdir -p staging-xorriso/bin/libs
+          cp "$(brew --prefix)/bin/xorriso" staging-xorriso/bin/xorriso
+          chmod +w staging-xorriso/bin/xorriso
+          dylibbundler -od -b -x staging-xorriso/bin/xorriso \
+            -d "$(pwd)/staging-xorriso/bin/libs" \
+            -p '@executable_path/libs/'
+          chmod +x staging-xorriso/bin/xorriso
+          ./staging-xorriso/bin/xorriso -version | head -3
+
+      - name: Download Windows xorriso bundle (from prep job)
+        if: matrix.xorriso_method == 'windows-shared'
+        uses: actions/download-artifact@v4
+        with:
+          name: xorriso-windows-bundle
+          path: staging-xorriso/
+
+      # ── PyInstaller build ───────────────────────────────────────────────
 
       - name: Install Linux Qt runtime libraries
         if: runner.os == 'Linux'
@@ -113,6 +246,41 @@ jobs:
             --collect-all PySide6 \
             floppybootcd/__main__.py
 
+      - name: Bundle xorriso and license notices into PyInstaller output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "dist/floppybootcd.app" ]; then
+            DEST="dist/floppybootcd.app/Contents/Resources"
+          elif [ -d "dist/floppybootcd/_internal" ]; then
+            DEST="dist/floppybootcd/_internal"
+          elif [ -d "dist/floppybootcd" ]; then
+            DEST="dist/floppybootcd"
+          else
+            echo "Could not find PyInstaller output dir under dist/"
+            ls -la dist/
+            exit 1
+          fi
+          mkdir -p "$DEST/bin"
+          if [ -d staging-xorriso/bin ]; then
+            cp -R staging-xorriso/bin/. "$DEST/bin/"
+            echo "Bundled xorriso into $DEST/bin/"
+            if [ "${{ matrix.label }}" = "windows-arm64" ]; then
+              echo "(Windows ARM64: xorriso is the x86_64 build; runs under Windows on ARM x64 emulation.)"
+            fi
+          else
+            echo "No staged xorriso for ${{ matrix.label }}; shipping notices only."
+          fi
+          # Always ship third-party notices and the GPLv3 license text.
+          cp THIRD_PARTY_NOTICES.md "$DEST/"
+          cp LICENSE-xorriso "$DEST/"
+          # On macOS, also drop a readable copy at the .app top level so users
+          # can find it without right-clicking → Show Package Contents.
+          if [ -d "dist/floppybootcd.app" ]; then
+            cp THIRD_PARTY_NOTICES.md dist/
+            cp LICENSE-xorriso dist/
+          fi
+
       - name: Package Linux build
         if: runner.os == 'Linux'
         shell: bash
@@ -162,6 +330,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: floppybootcd-*
           merge-multiple: true
 
       - name: List collected artifacts

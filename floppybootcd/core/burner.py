@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
+from .iso_builder import find_xorriso
 from .platform import Platform
 
 
@@ -216,10 +217,15 @@ class LinuxBurner(BurnerBackend):
     def is_available(cls) -> bool:
         if Platform.current() is not Platform.LINUX:
             return False
-        return any(shutil.which(c) for c in ("xorriso", "wodim", "cdrecord"))
+        return bool(find_xorriso()) or any(
+            shutil.which(c) for c in ("wodim", "cdrecord")
+        )
 
     def _find_tool(self) -> tuple[str, str]:
-        for tool in ("xorriso", "wodim", "cdrecord"):
+        x = find_xorriso()
+        if x:
+            return "xorriso", x
+        for tool in ("wodim", "cdrecord"):
             p = shutil.which(tool)
             if p:
                 return tool, p
@@ -228,9 +234,10 @@ class LinuxBurner(BurnerBackend):
     def list_drives(self) -> list[OpticalDrive]:
         drives: list[OpticalDrive] = []
         # Try xorriso -as cdrecord --devices first
+        xorriso_path = find_xorriso()
         try:
             out = subprocess.run(
-                ["xorriso", "-as", "cdrecord", "--devices"],
+                [xorriso_path or "xorriso", "-as", "cdrecord", "--devices"],
                 capture_output=True, text=True, timeout=10, check=False,
             ).stdout
             # Lines like:  0 dev='/dev/sr0' rwrw-- : 'HL-DT-ST' 'DVDRAM GUD0N'

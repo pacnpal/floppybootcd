@@ -29,22 +29,54 @@ The fastest way to get running is to grab a prebuilt binary from the
 No Python, no `uv`, no `pip`. If you'd rather install from source, the
 per-platform `uv tool install` instructions follow further down.
 
+### Supported operating systems
+
+The prebuilt v1.1.0+ bundles target these baselines. Newer versions of
+each OS work too. Older versions need [install from source](#install-from-source-uv).
+
+| Bundle | Runs on | Minimum version | Notes |
+|--------|---------|-----------------|-------|
+| `macos-arm64` | macOS on Apple Silicon (M1/M2/M3/M4 etc.) | **macOS 13 (Ventura)** | Built on macOS 15 against the macOS 13.0 SDK |
+| `macos-x86_64` | macOS on Intel | **macOS 13 (Ventura)** | Built on macOS 15 (Intel) against the macOS 13.0 SDK |
+| `windows-x86_64` | Windows on Intel/AMD x86_64 | **Windows 10 1809** (Oct 2018) | Native build; runs on Windows 10, 11, Server 2019/2022/2025 |
+| `windows-arm64` | Windows on ARM (Surface Pro X / Surface Pro 9+ / Snapdragon X / Copilot+ PCs) | **Windows 11 22H2** | Native ARM64 PyInstaller bundle; the bundled xorriso is the x86_64 build, run via Windows 11's built-in x64 emulator |
+| `linux-x86_64` | Linux on Intel/AMD x86_64 | **glibc 2.34** (Ubuntu 22.04, Debian 12, RHEL/Rocky/Alma 9, Fedora 36+, Raspberry Pi OS Bookworm) | Built on Ubuntu 22.04 |
+| `linux-arm64` | Linux on aarch64 — Raspberry Pi 3/4/5/CM3+/CM4/Zero 2 W (64-bit OS), AWS Graviton, Ampere Altra, Apple Silicon under Linux, etc. | **glibc 2.39** (Ubuntu 24.04, Debian 13 Trixie, Fedora 40+, RHEL 10) | Built on Ubuntu 24.04. PySide6's manylinux_2_39_aarch64 wheel pins this floor — for older ARM64 distros (Raspberry Pi OS Bookworm, glibc 2.36) install from source via uv (PySide6 comes from [piwheels](https://www.piwheels.org/)) |
+
+**Not yet supported:** 32-bit Windows (Win32), 32-bit Linux (i686 /
+i386), 32-bit ARM Linux (armhf / armv7l, used by older Raspberry Pis and
+Pi Zero W), Linux on RISC-V, Solaris, BSD. See [Roadmap](#roadmap) for
+the constraints — the blocker is upstream PySide6 wheel availability.
+
 ### Download a prebuilt binary (recommended)
 
 Each tagged release publishes a self-contained bundle for every supported
 platform. Pick the one that matches your machine:
 
-| Platform | File |
-|----------|------|
-| macOS (Apple Silicon, M1/M2/M3/M4) | `floppybootcd-<version>-macos-arm64.zip` |
-| macOS (Intel) | `floppybootcd-<version>-macos-x86_64.zip` |
-| Windows (x86_64) | `floppybootcd-<version>-windows-x86_64.zip` |
-| Linux (x86_64) | `floppybootcd-<version>-linux-x86_64.tar.gz` |
+| Platform | File | xorriso bundled? |
+|----------|------|------------------|
+| macOS (Apple Silicon, M1/M2/M3/M4) | `floppybootcd-<version>-macos-arm64.zip` | yes (native arm64) |
+| macOS (Intel) | `floppybootcd-<version>-macos-x86_64.zip` | yes (native x86_64) |
+| Windows (x86_64) | `floppybootcd-<version>-windows-x86_64.zip` | yes (native x86_64) |
+| Windows (ARM64) | `floppybootcd-<version>-windows-arm64.zip` | yes (x86_64, runs under Win11 ARM x64 emulation) |
+| Linux (x86_64) | `floppybootcd-<version>-linux-x86_64.tar.gz` | yes (native x86_64) |
+| Linux (ARM64 / Raspberry Pi 3-5) | `floppybootcd-<version>-linux-arm64.tar.gz` | yes (native aarch64) |
 
-You will still need `xorriso` installed system-wide — see
-[System dependency: xorriso](#system-dependency-xorriso). The bundle
-contains FloppyBootCD itself plus the bundled Python and PySide6 runtime;
-syslinux modules continue to be fetched on first build, as usual.
+Since v1.1.0, every prebuilt bundle ships with `xorriso` already
+inside, so you don't need to install it separately. The Windows ARM64
+artifact bundles the x86_64 xorriso instead of a native ARM64 build —
+that's because there's no public MSYS2 woarm64 build of `libisoburn`
+yet. Windows 11 on ARM ships a built-in x64 emulator that runs the
+x86_64 binary fine for our subprocess use case.
+
+The bundle contains FloppyBootCD itself, the Python + PySide6 runtime,
+and `xorriso` plus its required shared libraries. syslinux modules
+continue to be fetched on first build, as usual.
+
+xorriso is licensed under [GPLv3](LICENSE-xorriso) and is shipped
+unmodified, side-by-side with FloppyBootCD (which remains MIT). See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the source-offer
+and the full attribution.
 
 #### macOS
 
@@ -63,7 +95,9 @@ xattr -dr com.apple.quarantine floppybootcd.app
 mv floppybootcd.app /Applications/
 open /Applications/floppybootcd.app
 
-# 4. (Required) install xorriso.
+# 4. (Optional) install xorriso. The macOS prebuilt binary already ships
+#    one. Install only if FloppyBootCD reports it can't find xorriso, or
+#    if you'd rather use the Homebrew copy.
 brew install xorriso
 ```
 
@@ -91,7 +125,10 @@ Expand-Archive .\floppybootcd-<version>-windows-x86_64.zip -DestinationPath C:\T
 # 2. Run it.
 C:\Tools\floppybootcd\floppybootcd.exe
 
-# 3. (Required) install xorriso.
+# 3. (Optional) install xorriso. Both the x86_64 and ARM64 prebuilts
+#    already include xorriso. The ARM64 bundle uses the x86_64 xorriso
+#    via Windows 11's built-in x64 emulator — that's the supported
+#    configuration. Override only if you want a system-installed copy:
 scoop install xorriso
 ```
 
@@ -99,27 +136,94 @@ The first time you launch it, **Windows SmartScreen** may show a
 "Windows protected your PC" dialog because the binary is unsigned. Click
 **More info** → **Run anyway**.
 
-#### Linux
+#### Linux (including Raspberry Pi)
 
 ```bash
-# 1. Extract.
-tar -xzf floppybootcd-<version>-linux-x86_64.tar.gz
+# 1. Extract. Pick the file that matches your CPU:
+#      x86_64:   floppybootcd-<version>-linux-x86_64.tar.gz
+#      ARM64:    floppybootcd-<version>-linux-arm64.tar.gz
+#                (Raspberry Pi 3 / 4 / 5 / Zero 2 W on a 64-bit OS,
+#                 plus AWS Graviton, Ampere, and other aarch64 boxes)
+tar -xzf floppybootcd-<version>-linux-<arch>.tar.gz
 cd floppybootcd
 
 # 2. Run it.
 ./floppybootcd
 
-# 3. (Required) install xorriso.
-sudo apt install xorriso        # Debian / Ubuntu
+# 3. (Optional) install xorriso. The Linux prebuilt already ships one
+#    plus its libisoburn / libisofs / libburn runtime libraries. Install
+#    a system copy only if you want to override the bundled version:
+sudo apt install xorriso        # Debian / Ubuntu / Raspberry Pi OS
 sudo dnf install xorriso        # Fedora / RHEL
 sudo pacman -S libisoburn       # Arch
 ```
 
-The Linux bundle ships with the Qt runtime and platform plugins it needs,
-so no extra system Qt install is required. If `./floppybootcd` complains
-about a missing X/Wayland library on a minimal distro, install the
-typical desktop runtime (`libxkbcommon`, `libegl1`, `libfontconfig`,
-`libxcb-cursor0`, etc.).
+The Linux bundle ships with the Qt runtime, platform plugins, and
+xorriso it needs, so no extra system installs are required on a
+desktop-flavored distro. glibc baselines differ by arch:
+
+- **`linux-x86_64`** is built on Ubuntu 22.04 → **glibc 2.35**. Covers
+  Debian 12 (Bookworm, glibc 2.36), Raspberry Pi OS Bookworm (2.36),
+  Ubuntu 22.04+ (2.35+), RHEL/Rocky/Alma 9 (2.34 — note: 9.0 may be
+  too old; 9.1+ tested), Fedora 36+ (2.35+), and most other modern
+  distros.
+- **`linux-arm64`** is built on Ubuntu 24.04 → **glibc 2.39**. This
+  floor is set by upstream PySide6's `manylinux_2_39_aarch64` wheel —
+  the wheel won't install on older glibc, so we can't build against
+  it. Covers Ubuntu 24.04+ (2.39), Debian 13 Trixie+ (2.40), Fedora 40+
+  (2.39), RHEL 10. **Does not cover Raspberry Pi OS Bookworm** (glibc
+  2.36); on that distro install from source via `uv`, which uses
+  [piwheels](https://www.piwheels.org/) for PySide6.
+
+Older distros (Ubuntu 20.04, Debian 11, RHEL 8, Raspberry Pi OS
+Bullseye) won't load the prebuilt either way — install from source via
+`uv` instead. See [Roadmap](#roadmap) for the long-term plan.
+
+If `./floppybootcd` complains about a missing X/Wayland library on a
+minimal distro, install the typical desktop runtime (`libxkbcommon`,
+`libegl1`, `libfontconfig`, `libxcb-cursor0`, etc.).
+
+##### Raspberry Pi compatibility
+
+| Pi model | CPU | Recommended OS | Prebuilt binary works? |
+|----------|-----|----------------|------------------------|
+| Pi 5, CM5 | Cortex-A76 (ARMv8.2-A) | Raspberry Pi OS 64-bit, Trixie+ | `linux-arm64` ✅ |
+| Pi 5, CM5 | Cortex-A76 | Raspberry Pi OS 64-bit, Bookworm | ❌ — glibc 2.36 < 2.39; install from source |
+| Pi 4, 400, CM4 | Cortex-A72 | Raspberry Pi OS 64-bit, Trixie+ | `linux-arm64` ✅ |
+| Pi 4, 400, CM4 | Cortex-A72 | Raspberry Pi OS 64-bit, Bookworm | ❌ — glibc 2.36 < 2.39; install from source |
+| Pi 3, 3+, CM3, CM3+, Zero 2 W | Cortex-A53 | Raspberry Pi OS 64-bit | depends on Pi OS release (see above) |
+| Pi 2 v1.2 | Cortex-A53 (can run 64-bit) | Raspberry Pi OS 64-bit | depends on Pi OS release (see above) |
+| Pi 2 v1.1 | Cortex-A7 (ARMv7, 32-bit only) | Raspberry Pi OS 32-bit | ❌ no armhf prebuilt — install from source |
+| Pi 1, Zero, Zero W, CM1 | ARM1176JZF-S (ARMv6, 32-bit only) | Raspberry Pi OS 32-bit | ❌ no armv6/armhf prebuilt — install from source |
+
+The `linux-arm64` prebuilt requires **glibc 2.39+** because that's
+what upstream PySide6's `manylinux_2_39_aarch64` wheel demands. The
+quick way to check on your Pi:
+
+```bash
+ldd --version | head -1
+```
+
+If it prints `ldd (Debian GLIBC ...) 2.39` or higher, you can run the
+prebuilt. Bookworm (`2.36`) and earlier need install-from-source via
+`uv`:
+
+```bash
+sudo apt install xorriso
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Open a new shell so PATH picks up uv, then:
+uv tool install git+https://github.com/pacnpal/floppybootcd
+floppybootcd
+```
+
+That route uses [piwheels](https://www.piwheels.org/) automatically
+for PySide6, which is built per Pi OS release with the right glibc.
+
+For **32-bit Raspberry Pis** (Pi 1, Zero, Zero W, Pi 2 v1.1, Pi Zero 2
+W on a 32-bit Pi OS), no prebuilt is available — there is no upstream
+PySide6 wheel for armhf. Install from source via `uv` and hope
+piwheels has a wheel for your Pi OS version. See
+[Roadmap](#roadmap) for the long-term armhf plan.
 
 ---
 
@@ -319,6 +423,7 @@ above.
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [How it works under the hood](#how-it-works-under-the-hood)
+- [Roadmap](#roadmap)
 - [License](#license)
 
 ---
@@ -505,12 +610,23 @@ floppybootcd
 
 ## System dependency: xorriso
 
-FloppyBootCD uses `xorriso` to assemble the ISO. Install it once:
+FloppyBootCD uses `xorriso` to assemble the ISO.
+
+**If you downloaded a v1.1.0+ prebuilt binary**, xorriso is already
+inside the bundle for every platform *except Windows ARM64*. You don't
+need to install it separately. FloppyBootCD will prefer the bundled
+copy unless you point `xorriso_override` (in code) at a different one.
+xorriso ships under [GPLv3](LICENSE-xorriso); see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the upstream
+source link and the source-offer.
+
+**If you installed from source** (uv/pip), or if you're on Windows
+ARM64, install xorriso once:
 
 | Platform | Command |
 |----------|---------|
 | macOS | `brew install xorriso` |
-| Debian / Ubuntu | `sudo apt install xorriso` |
+| Debian / Ubuntu / Raspberry Pi OS | `sudo apt install xorriso` |
 | Fedora / RHEL | `sudo dnf install xorriso` |
 | Arch | `sudo pacman -S libisoburn` |
 | Windows | `scoop install xorriso`, or grab a build from the [xorriso site](https://www.gnu.org/software/xorriso/) |
@@ -1002,6 +1118,90 @@ At boot time:
 
 ---
 
+## Roadmap
+
+Possible future features, with the actual constraints surfaced. None
+are committed; if you have a strong opinion on prioritization, open an
+issue.
+
+### Older glibc Linux ARM64 (Raspberry Pi OS Bookworm and earlier)
+
+The `linux-arm64` prebuilt requires **glibc 2.39** because that's what
+PySide6's `manylinux_2_39_aarch64` wheel demands. This excludes
+Raspberry Pi OS Bookworm (glibc 2.36) and any older distro. Users on
+those distros can install from source via `uv`, which pulls PySide6
+from [piwheels](https://www.piwheels.org/) where the wheels are built
+against the local distro's glibc.
+
+A path to a more permissive prebuilt: rebuild PySide6 from source on
+Ubuntu 22.04 (glibc 2.35) in CI. Cost: 2-4 hours of CI per release.
+On the table if there's demand.
+
+### 32-bit ARM Linux (armhf / armv7l) — Raspberry Pi 1, Zero, Zero W, Pi 2 v1.1, 32-bit Pi OS on newer boards
+
+There is **no upstream PySide6 wheel for armhf** on PyPI, and there is
+no realistic path to one without building Qt + PySide6 from source.
+
+- `xorriso` for armhf is easy (`apt install xorriso` on 32-bit Pi OS).
+- `PyInstaller` for armhf works fine under QEMU emulation in CI.
+- `PySide6` is the blocker. [piwheels](https://www.piwheels.org/) ships
+  armhf PySide6 wheels intermittently, tied to specific Raspberry Pi
+  OS versions (so a wheel built for Bookworm won't necessarily install
+  on Bullseye), and not for every PySide6 release.
+
+Realistic path: a `linux-armhf` artifact built per Raspberry Pi OS
+version inside a QEMU `arm/v7` container, pulling PySide6 from
+piwheels. Each build is slow (10-30 min) and brittle. On the table if
+the demand exists; otherwise armhf users should install from source
+via `uv` and accept whatever PySide6 piwheels has for their Pi OS.
+
+### 32-bit Windows (Win32) and 32-bit x86 Linux (i686 / i386)
+
+There are **no upstream PySide6 wheels for `win32` or `manylinux*_i686`
+/ `manylinux*_i386`** on PyPI. To ship 32-bit prebuilts we'd need to
+build Qt and PySide6 from source for those targets, which is a
+multi-hour CI investment and adds maintenance overhead for a tiny
+install base.
+
+If you specifically need 32-bit, the install-from-source path with
+`uv` works as long as you have a 32-bit PySide6 wheel from somewhere
+(piwheels for Linux, or a custom build).
+
+### Native Windows ARM64 xorriso
+
+The `windows-arm64` bundle currently ships the **x86_64 xorriso** and
+relies on Windows 11's built-in x64 emulator (works fine). A native
+ARM64 xorriso would be ~3 MB smaller and avoid the emulator entirely.
+
+It needs cross-compiling the libisoburn / libisofs / libburn stack
+with LLVM-MinGW targeting `aarch64-w64-mingw32`. The toolchain is
+functional but young; CI reproducibility is the concern. Track
+[Windows-on-ARM-Experiments / msys2-woarm64-build](https://github.com/Windows-on-ARM-Experiments/msys2-woarm64-build)
+— if `mingw-w64-aarch64-libisoburn` lands upstream, we can swap to a
+native build the same way the x86_64 build works today.
+
+### Code-signed and notarized macOS / Windows builds
+
+The current binaries are unsigned, which is why the README has a
+Gatekeeper / SmartScreen workaround section. Signing requires paid
+developer accounts (Apple: $99/year, Windows EV cert: ~$300/year). On
+the table if there's enough demand to justify the cost.
+
+### AppImage and Flatpak for Linux
+
+The current Linux artifact is a tarball. AppImage would give us
+glibc-portability without needing the Ubuntu LTS baselines; Flatpak
+would give us first-class integration with software stores. Either is
+welcome as a contribution.
+
+---
+
 ## License
 
 MIT.
+
+The prebuilt release artifacts also include `xorriso` (GPLv3,
+unmodified, separate program) and the Qt + PySide6 runtime
+(LGPL-3.0-only). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
+and [`LICENSE-xorriso`](LICENSE-xorriso) for full attribution and
+source-offer terms.

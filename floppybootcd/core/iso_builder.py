@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,12 +14,46 @@ from .project import Project
 from . import bootloader
 
 
+def _bundled_xorriso() -> str | None:
+    """Return the path to a xorriso that ships inside the frozen app, if any.
+
+    The release workflow copies a per-platform xorriso (plus any required
+    shared libraries with RPATH/install_name fixups) into the PyInstaller
+    output. The exact location depends on platform and PyInstaller layout, so
+    we search the candidate roots in priority order.
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    name = "xorriso.exe" if os.name == "nt" else "xorriso"
+    roots: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.append(Path(meipass))
+    exe_dir = Path(sys.executable).parent
+    roots.append(exe_dir)
+    roots.append(exe_dir / "_internal")
+    # macOS .app bundle: Contents/MacOS/<launcher> → look in Resources/Frameworks.
+    if exe_dir.name == "MacOS" and exe_dir.parent.name == "Contents":
+        contents = exe_dir.parent
+        roots.append(contents / "Resources")
+        roots.append(contents / "Frameworks")
+    for r in roots:
+        cand = r / "bin" / name
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
 def find_xorriso(override: str = "") -> str | None:
-    """Locate xorriso. Override wins; then PATH; then known install dirs."""
+    """Locate xorriso. Override wins; then bundled; then PATH; then known dirs."""
     if override:
         p = Path(override)
         if p.is_file():
             return str(p)
+
+    bundled = _bundled_xorriso()
+    if bundled:
+        return bundled
 
     found = shutil.which("xorriso") or shutil.which("xorrisofs")
     if found:
