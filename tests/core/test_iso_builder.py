@@ -90,9 +90,14 @@ class TestValidateProject:
 
     def test_oversized_imz_inner_image_warned(self, tmp_path):
         # Highly compressible inner image: tiny on disk, huge inflated.
+        # Stream from a sparse file so we don't allocate 51 MiB in RAM.
+        inner = tmp_path / "inner.ima"
+        with open(inner, "wb") as fh:
+            fh.seek(51 * 1024 * 1024 - 1)
+            fh.write(b"\0")
         f = tmp_path / "huge.imz"
         with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("inner.ima", b"\0" * (51 * 1024 * 1024))
+            zf.write(inner, arcname="inner.ima")
         # Sanity: the .imz on disk is *not* >50 MiB — only the inner is.
         assert f.stat().st_size < 50 * 1024 * 1024
         p = Project(images=[FloppyImage(path=str(f))])

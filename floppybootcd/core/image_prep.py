@@ -85,10 +85,20 @@ def stage_image(src: str | Path, dest_dir: str | Path, dest_name: str) -> Path:
     src_path = Path(src)
     dest = Path(dest_dir) / dest_name
     if is_compressed(src_path):
-        with _open_imz(src_path) as zf:
-            member = _pick_inner_member(zf, src_path.name)
-            with zf.open(member) as inp, open(dest, "wb") as out:
-                shutil.copyfileobj(inp, out)
+        try:
+            with _open_imz(src_path) as zf:
+                member = _pick_inner_member(zf, src_path.name)
+                with zf.open(member) as inp, open(dest, "wb") as out:
+                    shutil.copyfileobj(inp, out)
+        except (zipfile.BadZipFile, OSError) as e:
+            # is_zipfile() can pass and a later read still fail (truncated
+            # archive, bad CRC, unsupported compression). Convert to the
+            # same user-facing message validate_project / _open_imz use.
+            raise ValueError(
+                f"{src_path.name}: failed to extract .imz "
+                f"({e}). Re-save it from WinImage as 'Compressed image "
+                "file' or extract the .ima first."
+            ) from e
         return dest
     shutil.copy2(src_path, dest)
     return dest

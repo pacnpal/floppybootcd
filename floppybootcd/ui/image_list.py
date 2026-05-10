@@ -7,11 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 
-from ..core.image_prep import (
-    ALL_ACCEPTED_EXTS,
-    FLOPPY_EXTS,
-    probe_uncompressed_size,
-)
+from ..core.image_prep import ALL_ACCEPTED_EXTS, probe_uncompressed_size
 from ..core.project import FloppyImage
 
 
