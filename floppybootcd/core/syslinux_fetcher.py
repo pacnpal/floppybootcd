@@ -38,6 +38,12 @@ REQUIRED_BIOS_FILES = [
     "libgpl.c32",
     "chain.c32",
     "reboot.c32",
+    # ACPI power-off shim; backs the "Shutdown" menu entry. Issues an
+    # ACPI S5 transition via int 15h AX=5307h. Works on any real or
+    # virtual BIOS-flavored machine with ACPI (i.e. everything since
+    # ~1999); falls through silently on the rare bare hardware where
+    # ACPI isn't wired up.
+    "poweroff.c32",
 ]
 
 

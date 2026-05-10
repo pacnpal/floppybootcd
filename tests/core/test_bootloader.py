@@ -107,9 +107,73 @@ class TestWriteConfig:
         p = Project(timeout_secs=-5, images=[FloppyImage(path="/x/a.img")])
         assert "TIMEOUT 0" in self._cfg(p)
 
-    def test_menu_title_uses_project_title(self):
+    def test_menu_title_is_fixed_floppybootcd_attribution(self):
+        # MENU TITLE is reserved for the FloppyBootCD v<ver> banner so
+        # every produced disc carries a fixed, non-editable attribution
+        # at the top. The project's own title is rendered separately as
+        # a disabled subtitle banner (see test below).
+        from floppybootcd import __version__
         p = Project(title="My Cool Disc", images=[FloppyImage(path="/x/a.img")])
-        assert "MENU TITLE My Cool Disc" in self._cfg(p)
+        cfg = self._cfg(p)
+        assert f"MENU TITLE FloppyBootCD v{__version__}" in cfg
+        assert "MENU TITLE My Cool Disc" not in cfg
+
+    def test_disc_title_rendered_as_disabled_banner(self):
+        p = Project(title="My Cool Disc", images=[FloppyImage(path="/x/a.img")])
+        cfg = self._cfg(p)
+        assert "MENU SEPARATOR" in cfg
+        assert "LABEL __disc_title__" in cfg
+        assert "MENU LABEL My Cool Disc" in cfg
+        assert "MENU DISABLE" in cfg
+
+    def test_no_disc_title_banner_when_title_empty(self):
+        p = Project(title="", images=[FloppyImage(path="/x/a.img")])
+        cfg = self._cfg(p)
+        assert "__disc_title__" not in cfg
+
+    def test_shutdown_entry_uses_poweroff_c32(self):
+        p = Project(images=[FloppyImage(path="/x/a.img")])
+        cfg = self._cfg(p)
+        assert "LABEL shutdown" in cfg
+        assert "COM32 poweroff.c32" in cfg
+        assert "Shutdown" in cfg
+
+    def test_builtins_emitted_in_order(self):
+        # local, reboot, shutdown — present, in that order, after the
+        # user images.
+        p = Project(images=[FloppyImage(path="/x/a.img")])
+        cfg = self._cfg(p)
+        i_local = cfg.index("LABEL local")
+        i_reboot = cfg.index("LABEL reboot")
+        i_shutdown = cfg.index("LABEL shutdown")
+        assert i_local < i_reboot < i_shutdown
+
+    def test_all_editable_omits_allowoptions(self):
+        # Syslinux defaults to Tab-edit enabled; the only reason we'd
+        # touch ALLOWOPTIONS is to lock things down.
+        p = Project(images=[
+            FloppyImage(path="/x/a.img", editable=True),
+            FloppyImage(path="/x/b.img", editable=True),
+        ])
+        cfg = self._cfg(p)
+        assert "ALLOWOPTIONS" not in cfg
+        assert "MENU NOTABMSG" not in cfg
+
+    def test_any_non_editable_emits_allowoptions_zero(self):
+        # Syslinux's Tab-edit lock is global only — `ALLOWOPTIONS 0`
+        # affects every entry. We treat any FloppyImage(editable=False)
+        # as the user's signal to lock the whole disc (the alternative
+        # — silently doing nothing — would be worse).
+        p = Project(images=[
+            FloppyImage(path="/x/a.img", editable=True),
+            FloppyImage(path="/x/b.img", editable=False),
+        ])
+        cfg = self._cfg(p)
+        assert "ALLOWOPTIONS 0" in cfg
+        # And we replace the default "Press [Tab] to edit options"
+        # status bar message so users aren't told about a key that
+        # doesn't work.
+        assert "MENU NOTABMSG" in cfg
 
     def test_default_falls_back_to_first_image(self):
         p = Project(images=[
@@ -294,7 +358,10 @@ class TestStageDedup:
         result = IsolinuxBackend().stage(project, iso_root)
 
         cfg = (iso_root / "isolinux" / "isolinux.cfg").read_text()
-        assert "MENU TITLE StageTest" in cfg
+        # MENU TITLE is always the FloppyBootCD attribution; project
+        # title shows up as the disabled subtitle banner below it.
+        assert "MENU TITLE FloppyBootCD v" in cfg
+        assert "MENU LABEL StageTest" in cfg
         assert result.boot_image_relpath == "isolinux/isolinux.bin"
         assert result.boot_catalog_relpath == "isolinux/boot.cat"
         assert "-no-emul-boot" in result.extra_xorriso_args

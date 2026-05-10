@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
+from .. import __version__
 from .project import Project
 from . import image_prep, syslinux_fetcher
 
@@ -135,13 +136,35 @@ class IsolinuxBackend(BootloaderBackend):
 
     def _write_config(self, project: Project, renamed: dict[int, str]) -> str:
         ui_module = "vesamenu.c32" if project.menu_style == "vesa" else "menu.c32"
+        # MENU TITLE is `FloppyBootCD v<ver>` — a fixed, non-editable
+        # attribution line that always sits above everything else.
+        # The user-supplied project title is rendered below it as a
+        # disabled banner entry so it reads like a subtitle without
+        # becoming a selectable menu option.
         lines = [
             f"UI {ui_module}",
             "PROMPT 0",
             f"TIMEOUT {max(0, project.timeout_secs) * 10}",  # 1/10s units
             "",
-            f"MENU TITLE {project.title}",
+            f"MENU TITLE FloppyBootCD v{__version__}",
         ]
+
+        # Tab-to-edit-kernel-args lock. Syslinux's edit-lock is global
+        # only — `ALLOWOPTIONS 0` disables Tab/Esc across every entry;
+        # there is no per-entry switch (verified against syslinux 6.x
+        # menu.txt; `MENU IMMEDIATE`, often cited online, is NOT a
+        # real directive). Built-ins (LOCALBOOT / reboot / poweroff)
+        # have no kernel args to edit, so locking is the user's
+        # primary lever for the floppy images themselves. Treat any
+        # FloppyImage(editable=False) as the user's explicit signal to
+        # lock the whole disc, including built-ins (the desired side
+        # effect). When every image opts in to editing, leave
+        # ALLOWOPTIONS at its default so Tab still works.
+        any_locked = any(not img.editable for img in project.images)
+        if any_locked:
+            lines.append("ALLOWOPTIONS 0")
+            lines.append('MENU NOTABMSG Press [Enter] to boot the selected entry.')
+
         if project.menu_style == "vesa" and project.background_image:
             lines.append("MENU BACKGROUND background.png")
         lines += [
@@ -154,6 +177,20 @@ class IsolinuxBackend(BootloaderBackend):
             "MENU COLOR timeout      1;37;40 #c0ffffff #00000000 std",
             "",
         ]
+
+        # Disc title banner: blank → disc title (disabled) → blank.
+        # MENU DISABLE on a LABEL renders it as a non-selectable line
+        # (the cursor skips over it), giving the visual impression of
+        # a subtitle a few rows below the FloppyBootCD attribution.
+        if project.title:
+            lines += [
+                "MENU SEPARATOR",
+                "LABEL __disc_title__",
+                f"  MENU LABEL {project.title}",
+                "  MENU DISABLE",
+                "MENU SEPARATOR",
+                "",
+            ]
 
         # Determine default
         default_label = None
@@ -188,7 +225,9 @@ class IsolinuxBackend(BootloaderBackend):
             lines.append(f"  APPEND initrd=/images/{target}")
             lines.append("")
 
-        # Always offer reboot + boot from local disk
+        # Always offer boot-from-disk, reboot, and shutdown. None take
+        # kernel args, so even when Tab is allowed there's nothing
+        # useful to edit on these.
         lines += [
             "LABEL local",
             "  MENU LABEL Boot from ^hard disk",
@@ -197,6 +236,10 @@ class IsolinuxBackend(BootloaderBackend):
             "LABEL reboot",
             "  MENU LABEL ^Reboot",
             "  COM32 reboot.c32",
+            "",
+            "LABEL shutdown",
+            "  MENU LABEL ^Shutdown",
+            "  COM32 poweroff.c32",
             "",
         ]
         return "\n".join(lines)

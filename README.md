@@ -756,6 +756,44 @@ The label can include a hotkey marker: in the menu, the character after a
 `^` becomes a keyboard shortcut and is highlighted. For example,
 `^Windows 98` sets `W` as the hotkey.
 
+The edit dialog also exposes **Allow editing at boot prompt** (default
+on). When this is on, pressing **Tab** on the entry at boot time drops
+to the kernel-args editor so you can append MEMDISK options on the fly.
+**Heads up:** syslinux's Tab-edit lock is global, not per-entry —
+marking *any* image as not editable causes the generated `isolinux.cfg`
+to emit `ALLOWOPTIONS 0`, which disables Tab/Esc for **every** entry on
+the disc, including Boot from hard disk / Reboot / Shutdown. There is
+no way around this in syslinux; if you need per-entry editing control,
+you need a different bootloader (e.g. GRUB), which a future plugin
+backend could provide.
+
+### Boot menu layout
+
+Every disc the app builds renders the same fixed-shape menu:
+
+```
+                       FloppyBootCD vX.Y.Z         ← non-editable attribution
+                       <your disc title>           ← greyed-out subtitle
+
+                       Microsoft Windows 98
+                       Windows 98 SE
+                       ...
+                       Boot from hard disk         ← always present
+                       Reboot                      ← always present (reboot.c32)
+                       Shutdown                    ← always present (poweroff.c32)
+```
+
+- The **FloppyBootCD vX.Y.Z** line is the syslinux `MENU TITLE` and
+  isn't editable from the .fbcd project — it brands every disc with
+  the version of the tool that built it.
+- The **disc title** (the project's `title` field) appears below as a
+  disabled banner so the cursor skips over it.
+- **Boot from hard disk** invokes `LOCALBOOT 0x80` (chain-load the
+  installed OS).
+- **Reboot** runs syslinux's `reboot.c32`.
+- **Shutdown** runs syslinux's `poweroff.c32` (ACPI S5 transition;
+  works on every real or virtual machine made since ~1999).
+
 ### Reordering and the default entry
 
 - **Drag entries up and down** within the list to reorder them. The order

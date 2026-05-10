@@ -460,16 +460,50 @@ class MainWindow(QMainWindow):
             return
         item = items[0]
         img: FloppyImage = item.data(Qt.ItemDataRole.UserRole)
-        from PySide6.QtWidgets import QInputDialog
-        new_label, ok = QInputDialog.getText(
-            self, "Edit Menu Label",
-            f"Boot menu label for {img.filename}:", text=img.label,
+
+        # Lightweight inline edit dialog. Only the bits that users
+        # actually want to flip per-entry: the menu label (free text)
+        # and whether the boot prompt's Tab editor is offered at boot
+        # time for this entry. Description / hotkey / default come
+        # from the .fbcd file and are handled elsewhere.
+        from PySide6.QtWidgets import (
+            QCheckBox, QDialog, QDialogButtonBox, QFormLayout,
         )
-        if ok:
-            img.label = new_label.strip()
-            row = self.list_widget.row(item)
-            self.list_widget.update_item(row)
-            self._mark_dirty()
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Edit entry — {img.filename}")
+        form = QFormLayout(dlg)
+        label_edit = QLineEdit(img.label)
+        label_edit.setPlaceholderText(img.filename)
+        form.addRow("Boot menu label:", label_edit)
+        editable_check = QCheckBox(
+            "Allow editing at boot prompt (Tab key on the entry)"
+        )
+        editable_check.setChecked(img.editable)
+        editable_check.setToolTip(
+            "Syslinux's Tab-to-edit lock is global, not per-entry — "
+            "marking ANY image as not editable causes the generated "
+            "isolinux.cfg to emit ALLOWOPTIONS 0, which disables Tab "
+            "and Esc for every entry on the disc (including "
+            "Boot from hard disk / Reboot / Shutdown).\n\n"
+            "When every image is editable (the default), the syslinux "
+            "default kicks in and Tab works normally."
+        )
+        form.addRow("", editable_check)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        img.label = label_edit.text().strip()
+        img.editable = editable_check.isChecked()
+        row = self.list_widget.row(item)
+        self.list_widget.update_item(row)
+        self._mark_dirty()
 
     def _set_default(self) -> None:
         items = self.list_widget.selectedItems()

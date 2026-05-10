@@ -15,6 +15,12 @@ class FloppyImage:
     description: str = ""         # optional help text shown under entry
     hotkey: str = ""              # single char, used as ^X in MENU LABEL
     default: bool = False         # is this the default entry?
+    # If False, the boot menu emits MENU IMMEDIATE for this entry so
+    # ISOLINUX boots it directly without showing the kernel-args
+    # editor (the Tab prompt). Default True preserves the historical
+    # behavior. Built-in entries (Boot from hard disk / Reboot /
+    # Shutdown) are always locked regardless of this field.
+    editable: bool = True
 
     @property
     def filename(self) -> str:
