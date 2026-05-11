@@ -182,6 +182,46 @@ class TestWalkFloppyImages:
         found = image_prep.walk_floppy_images(tmp_path)
         assert len(found) == 5
 
+    def test_dir_scan_cap_picks_lex_smallest_deterministically(
+        self, tmp_path, monkeypatch
+    ):
+        """When a directory has more entries than _DROP_DIR_SCAN_CAP,
+        heapq.nsmallest retains the lex-smallest subset — deterministic
+        across filesystems where os.scandir order isn't specified."""
+        monkeypatch.setattr(image_prep, "_DROP_DIR_SCAN_CAP", 4)
+        monkeypatch.setattr(image_prep, "_DROP_FILE_LIMIT", 100)
+        # 6 names, cap 4 → expect the 4 lex-smallest by name
+        for name in ("z.img", "y.img", "a.img", "m.img", "c.img", "b.img"):
+            (tmp_path / name).write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = sorted(Path(p).name for p in found)
+        assert names == ["a.img", "b.img", "c.img", "m.img"]
+
+
+class TestNormalizeForDedup:
+    """normalize_for_dedup makes textually-different but
+    semantically-equal paths compare equal so dedup catches them."""
+
+    def test_idempotent(self):
+        once = image_prep.normalize_for_dedup("/foo/bar.img")
+        assert image_prep.normalize_for_dedup(once) == once
+
+    def test_collapses_dotdot(self):
+        norm = image_prep.normalize_for_dedup("/foo/bar/../baz.img")
+        assert ".." not in norm
+        assert norm.endswith("baz.img")
+
+    def test_separator_normalization(self):
+        """Forward slashes (QUrl.toLocalFile on Windows) compare equal
+        to native separators after normalization."""
+        import os as _os
+        # On POSIX, os.path.normpath leaves "/" alone (it's the native
+        # separator). On Windows it converts "/" → "\\". Either way
+        # the two normalized forms must match.
+        a = image_prep.normalize_for_dedup("/foo/bar/boot.img")
+        b = image_prep.normalize_for_dedup(_os.sep.join(["", "foo", "bar", "boot.img"]))
+        assert a == b
+
 
 # ── Test fixtures ───────────────────────────────────────────────────────────
 

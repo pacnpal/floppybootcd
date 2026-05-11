@@ -779,34 +779,20 @@ class MainWindow(QMainWindow):
     def dropEvent(self, e) -> None:
         if not e.mimeData().hasUrls():
             return
-        from ..core.image_prep import walk_floppy_images
-        from ..core.project import PROJECT_EXT
+        # parse_dropped_urls applies the project-wins-over-images rule
+        # and normalizes paths for dedup against the current project.
+        # Single helper lets the list-widget and window-level drops
+        # share semantics — see image_list.parse_dropped_urls.
+        from .image_list import parse_dropped_urls
 
-        # .fbcd wins over images in the same drop because loading a
-        # project replaces the image list anyway. Pre-scan for it in
-        # one cheap pass so we don't waste UI-thread time recursing
-        # a 100k-entry folder whose result we'd then throw away.
-        urls = list(e.mimeData().urls())
-        for url in urls:
-            if not url.isLocalFile():
-                continue
-            p = Path(url.toLocalFile())
-            if p.is_file() and p.suffix.lower() == PROJECT_EXT:
-                self.open_project_path(str(p))
-                e.acceptProposedAction()
-                return
-
-        # No .fbcd in the drop; collect floppy images from files and
-        # folders.
-        floppy_paths: list[str] = []
-        existing = {img.path for img in self.project.images}
-        for url in urls:
-            if not url.isLocalFile():
-                continue
-            for found in walk_floppy_images(Path(url.toLocalFile())):
-                if found not in existing and found not in floppy_paths:
-                    floppy_paths.append(found)
-
+        existing_paths = [img.path for img in self.project.images]
+        project_path, floppy_paths = parse_dropped_urls(
+            e.mimeData().urls(), existing_paths,
+        )
+        if project_path:
+            self.open_project_path(project_path)
+            e.acceptProposedAction()
+            return
         if floppy_paths:
             self._add_paths(floppy_paths)
             e.acceptProposedAction()

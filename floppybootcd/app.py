@@ -73,8 +73,18 @@ class FloppyBootCDApplication(QApplication):
 
     def _dispatch(self, path: str) -> None:
         """Send *path* to the right MainWindow handler based on its
-        extension. .fbcd → load project; floppy image / folder → add."""
-        canonical = self._canonicalize(path)
+        extension. .fbcd → load project; floppy image / folder → add.
+        Canonicalizes the input — callers can hand in raw shell args.
+        """
+        self._dispatch_canonical(self._canonicalize(path))
+
+    def _dispatch_canonical(self, canonical: str) -> None:
+        """Dispatch a path that's already been canonicalized.
+
+        Split out from :meth:`_dispatch` so callers that have already
+        canonicalized — notably :meth:`_dispatch_batch` — don't pay
+        for a redundant ``Path.expanduser().resolve()`` per entry.
+        """
         win = self._main_window
         if win is None:
             self._pending_open_paths.append(canonical)
@@ -107,15 +117,19 @@ class FloppyBootCDApplication(QApplication):
         the batch for any ``.fbcd`` and, if found, dispatch ONLY the
         first one — the project replaces the entire image list
         anyway, so the rest of the batch would have been clobbered.
+
+        Canonicalizes each path once up front and feeds the
+        canonical form straight to :meth:`_dispatch_canonical`, so
+        even big argv lists don't repeat the resolve() work.
         """
         canonical = [self._canonicalize(p) for p in paths]
         for cp in canonical:
             cp_path = Path(cp)
             if cp_path.is_file() and cp_path.suffix.lower() == PROJECT_EXT:
-                self._dispatch(cp)
+                self._dispatch_canonical(cp)
                 return
         for cp in canonical:
-            self._dispatch(cp)
+            self._dispatch_canonical(cp)
 
     def event(self, ev: QEvent) -> bool:  # type: ignore[override]
         if ev.type() == QEvent.Type.FileOpen and isinstance(ev, QFileOpenEvent):

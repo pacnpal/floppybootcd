@@ -74,14 +74,18 @@ class TestDispatchBatch:
     forbids two)."""
 
     def _make_stub(self):
-        """Return a stub that captures _dispatch calls; binds the
-        real _dispatch_batch implementation."""
+        """Return a stub that captures _dispatch_canonical calls;
+        binds the real _dispatch_batch implementation. We capture
+        _dispatch_canonical (not _dispatch) because _dispatch_batch
+        canonicalizes once up front and feeds the canonical form
+        straight to _dispatch_canonical — that's the contract we
+        want to lock in."""
         calls: list[str] = []
 
         class Stub:
             _canonicalize = staticmethod(FloppyBootCDApplication._canonicalize)
 
-            def _dispatch(self, path: str) -> None:
+            def _dispatch_canonical(self, path: str) -> None:
                 calls.append(path)
 
         Stub._dispatch_batch = FloppyBootCDApplication._dispatch_batch

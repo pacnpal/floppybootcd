@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
@@ -10,10 +11,62 @@ from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 from ..core.image_prep import (
     ALL_ACCEPTED_EXTS,
     COMPRESSED_EXTS,
+    normalize_for_dedup,
     probe_uncompressed_size,
     walk_floppy_images,
 )
 from ..core.project import PROJECT_EXT, FloppyImage
+
+
+def parse_dropped_urls(
+    urls: Iterable, existing_paths: Iterable[str]
+) -> tuple[str | None, list[str]]:
+    """Resolve a sequence of QUrls into a (project_path, image_paths) tuple.
+
+    Shared between :class:`ImageListWidget.dropEvent` and
+    :meth:`MainWindow.dropEvent` so the drop semantics stay
+    consistent between the two drop targets:
+
+    * **Project wins:** if any URL is a ``.fbcd`` file, return it as
+      ``project_path`` and an empty image list (project replacement
+      makes any image drops moot). Pre-scan in one cheap pass so we
+      don't waste UI-thread time recursing a 100k-entry folder whose
+      result we'd then throw away.
+    * **Otherwise:** walk every URL via :func:`walk_floppy_images`
+      (recurses folders, filters by extension), dedup against
+      *existing_paths* using :func:`normalize_for_dedup` so paths
+      from ``QUrl.toLocalFile()`` (forward slashes on Windows) and
+      from ``os.scandir`` (native separators) compare equal.
+    * Non-local URLs (``http://``, ``smb://``, …) are silently skipped.
+
+    Returns
+    -------
+    (project_path, image_paths)
+        Exactly one of these will be non-empty; the other is
+        ``None`` / ``[]``. A drag of e.g. only a ``.txt`` returns
+        ``(None, [])``.
+    """
+    urls = list(urls)
+    for u in urls:
+        if not u.isLocalFile():
+            continue
+        p = Path(u.toLocalFile())
+        if p.is_file() and p.suffix.lower() == PROJECT_EXT:
+            return str(p), []
+
+    existing_norm = {normalize_for_dedup(p) for p in existing_paths}
+    image_paths: list[str] = []
+    seen_norm: set[str] = set()
+    for u in urls:
+        if not u.isLocalFile():
+            continue
+        for found in walk_floppy_images(Path(u.toLocalFile())):
+            key = normalize_for_dedup(found)
+            if key in existing_norm or key in seen_norm:
+                continue
+            seen_norm.add(key)
+            image_paths.append(found)
+    return None, image_paths
 
 
 class ImageListWidget(QListWidget):
@@ -51,7 +104,11 @@ class ImageListWidget(QListWidget):
     # ── Drag-and-drop ─────────────────────────────────────────────────────────
 
     def _existing_paths(self) -> set[str]:
-        return {self.item(i).data(Qt.ItemDataRole.UserRole).path
+        """Set of currently-listed image paths, normalized for dedup
+        comparison (separators + case). See
+        :func:`normalize_for_dedup` for the rationale."""
+        return {normalize_for_dedup(
+            self.item(i).data(Qt.ItemDataRole.UserRole).path)
                 for i in range(self.count())}
 
     def mime_is_acceptable(self, mime) -> bool:
@@ -76,7 +133,7 @@ class ImageListWidget(QListWidget):
         """
         if not mime.hasUrls():
             return False
-        existing = self._existing_paths()
+        existing = self._existing_paths()  # already normalized
         for u in mime.urls():
             if not u.isLocalFile():
                 continue
@@ -88,7 +145,8 @@ class ImageListWidget(QListWidget):
             ext = p.suffix.lower()
             if ext == PROJECT_EXT:
                 return True
-            if ext in ALL_ACCEPTED_EXTS and str(p) not in existing:
+            if (ext in ALL_ACCEPTED_EXTS
+                    and normalize_for_dedup(p) not in existing):
                 return True
         return False
 
@@ -107,39 +165,21 @@ class ImageListWidget(QListWidget):
     def dropEvent(self, e: QDropEvent) -> None:
         mime = e.mimeData()
         if mime.hasUrls() and self.mime_is_acceptable(mime):
-            # Two outcomes are possible from a single drop:
-            # (a) a .fbcd project file → emit project_dropped and let
-            #     the host window load it (replaces the current
-            #     project after the usual unsaved-changes prompt).
-            # (b) any combination of floppy-image files and folders
-            #     → recurse folders, flatten to a deduped path list,
-            #     emit files_dropped.
-            # A project .fbcd wins over images in the same drop
-            # because loading a project replaces the image list
-            # anyway. Pre-scan for .fbcd in a single cheap pass so
-            # we don't waste UI-thread time recursing a 100k-entry
-            # folder whose result we'd then throw away.
-            urls = list(mime.urls())
-            for url in urls:
-                if not url.isLocalFile():
-                    continue
-                p = Path(url.toLocalFile())
-                if p.is_file() and p.suffix.lower() == PROJECT_EXT:
-                    self.project_dropped.emit(str(p))
-                    e.acceptProposedAction()
-                    return
-
-            # No .fbcd in the drop; collect floppy images from files
-            # and folders.
-            floppy_paths: list[str] = []
-            existing = self._existing_paths()
-            for url in urls:
-                if not url.isLocalFile():
-                    continue
-                for found in walk_floppy_images(Path(url.toLocalFile())):
-                    if found not in existing and found not in floppy_paths:
-                        floppy_paths.append(found)
-
+            # Both this widget and the main window route external
+            # drops through parse_dropped_urls() so the two drop
+            # targets always agree on what counts. See that helper
+            # for the full project-wins / dedup contract.
+            existing_paths = [
+                self.item(i).data(Qt.ItemDataRole.UserRole).path
+                for i in range(self.count())
+            ]
+            project_path, floppy_paths = parse_dropped_urls(
+                mime.urls(), existing_paths,
+            )
+            if project_path:
+                self.project_dropped.emit(project_path)
+                e.acceptProposedAction()
+                return
             if floppy_paths:
                 self.files_dropped.emit(floppy_paths)
                 e.acceptProposedAction()
