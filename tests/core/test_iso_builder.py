@@ -343,3 +343,56 @@ class TestBuildErrors:
         monkeypatch.setattr(iso_builder, "find_xorriso", lambda override="": None)
         with pytest.raises(RuntimeError, match="xorriso is required"):
             iso_builder.build(project, opts)
+
+    def test_build_resolves_relative_output_path(self, tmp_path, monkeypatch):
+        """xorriso runs with cwd=staging_root, so a relative output_path
+        must be absolutized first — otherwise the ISO would land inside
+        the staging tree and be wiped by the cleanup."""
+        f = tmp_path / "ok.img"
+        f.write_bytes(b"\0" * 1024)
+        project = Project(images=[FloppyImage(path=str(f))])
+
+        monkeypatch.chdir(tmp_path)
+        opts = BuildOptions(output_path=Path("out.iso"))  # relative!
+        expected_abs = (tmp_path / "out.iso").resolve()
+
+        monkeypatch.setattr(
+            iso_builder, "find_xorriso", lambda override="": "/usr/bin/xorriso"
+        )
+
+        # Stub the bootloader so we don't pull a real syslinux.
+        stub_stage = iso_builder.bootloader.StagingResult(
+            boot_image_relpath="isolinux/isolinux.bin",
+            boot_catalog_relpath="isolinux/boot.cat",
+            extra_xorriso_args=[],
+        )
+        fake_backend = MagicMock()
+        fake_backend.label = "stub"
+        fake_backend.stage.return_value = stub_stage
+        monkeypatch.setattr(
+            iso_builder.bootloader, "get_backend", lambda _id: fake_backend
+        )
+
+        captured: dict[str, object] = {}
+
+        class FakeProc:
+            def __init__(self, cmd, **kwargs):
+                captured["cmd"] = cmd
+                captured["cwd"] = kwargs.get("cwd")
+                self.stdout = iter([])
+
+                # Pretend xorriso wrote the file at the resolved location.
+                Path(cmd[cmd.index("-o") + 1]).write_bytes(b"FAKE-ISO")
+
+            def wait(self):
+                return 0
+
+        monkeypatch.setattr(subprocess, "Popen", FakeProc)
+
+        result = iso_builder.build(project, opts)
+
+        out_arg = captured["cmd"][captured["cmd"].index("-o") + 1]
+        assert Path(out_arg).is_absolute()
+        assert Path(out_arg) == expected_abs
+        assert result.iso_path == expected_abs
+        assert expected_abs.is_file()
