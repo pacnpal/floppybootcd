@@ -764,9 +764,34 @@ class MainWindow(QMainWindow):
     # files (which trigger an open-project flow instead of being added
     # as images).
 
+    @staticmethod
+    def _drag_is_actionable(mime) -> bool:
+        """True only when at least one URL in *mime* is something we'd
+        actually do something with. Mirrors ImageListWidget's hover
+        gate so the "accept" cursor never appears for a drag we'd
+        silently ignore (e.g. dropping a .txt on the window)."""
+        if not mime.hasUrls():
+            return False
+        from ..core.image_prep import ALL_ACCEPTED_EXTS
+        from ..core.project import PROJECT_EXT
+        for u in mime.urls():
+            if not u.isLocalFile():
+                continue
+            p = Path(u.toLocalFile())
+            if p.is_dir():
+                return True
+            if not p.is_file():
+                continue
+            ext = p.suffix.lower()
+            if ext == PROJECT_EXT or ext in ALL_ACCEPTED_EXTS:
+                return True
+        return False
+
     def dragEnterEvent(self, e) -> None:
-        if e.mimeData().hasUrls():
+        if self._drag_is_actionable(e.mimeData()):
             e.acceptProposedAction()
+        else:
+            e.ignore()
 
     def dropEvent(self, e) -> None:
         if not e.mimeData().hasUrls():

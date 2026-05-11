@@ -913,7 +913,7 @@ opens FloppyBootCD with that project loaded.
 ### macOS (`.app` bundle)
 
 Automatic. The `.app`'s `Info.plist` declares `CFBundleDocumentTypes`
-and a `UTExportedTypeDeclaration` for `com.pacnpal.floppybootcd.project`,
+and a `UTExportedTypeDeclarations` entry for `com.pacnpal.floppybootcd.project`,
 so Launch Services binds `.fbcd` to FloppyBootCD the first time you
 launch the app or drag it to `/Applications`. Finder routes double-clicks
 via Apple Events; the runtime catches them through a `QFileOpenEvent`

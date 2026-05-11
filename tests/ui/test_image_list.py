@@ -163,6 +163,59 @@ class TestDropEventAccepts:
         assert emitted == []
 
 
+class TestMimeIsAcceptable:
+    """The hover gate decides whether the cursor shows the OS
+    'accept' icon. It needs to reject drags that drop into a no-op
+    (e.g. all files already in the list), otherwise the cursor
+    misleads the user."""
+
+    def _mime_with(self, paths):
+        from PySide6.QtCore import QMimeData, QUrl
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+        return mime
+
+    def test_accepts_new_image_file(self, widget, tmp_path):
+        f = tmp_path / "new.img"
+        f.write_bytes(b"x")
+        assert widget._mime_is_acceptable(self._mime_with([f])) is True
+
+    def test_rejects_when_all_files_already_in_list(self, widget, tmp_path):
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        widget.add_image(FloppyImage(path=str(f)))
+        # Dragging the same file again must NOT show the accept cursor —
+        # dropping would be a pure no-op and the cursor would lie.
+        assert widget._mime_is_acceptable(self._mime_with([f])) is False
+
+    def test_accepts_mixed_dup_and_new(self, widget, tmp_path):
+        dup = tmp_path / "dup.img"
+        dup.write_bytes(b"x")
+        new = tmp_path / "new.img"
+        new.write_bytes(b"y")
+        widget.add_image(FloppyImage(path=str(dup)))
+        # At least one file in the drag is new → accept.
+        assert widget._mime_is_acceptable(self._mime_with([dup, new])) is True
+
+    def test_accepts_folder_drop_unconditionally(self, widget, tmp_path):
+        # We can't cheaply tell whether a folder contains anything new
+        # without walking it at hover time; accept it and let the drop
+        # path dedup.
+        folder = tmp_path / "boot-disks"
+        folder.mkdir()
+        assert widget._mime_is_acceptable(self._mime_with([folder])) is True
+
+    def test_accepts_fbcd_project_drop(self, widget, tmp_path):
+        p = tmp_path / "project.fbcd"
+        p.write_bytes(b"{}")
+        assert widget._mime_is_acceptable(self._mime_with([p])) is True
+
+    def test_rejects_unknown_extension(self, widget, tmp_path):
+        f = tmp_path / "readme.txt"
+        f.write_bytes(b"x")
+        assert widget._mime_is_acceptable(self._mime_with([f])) is False
+
+
 class TestEnterKeyEditsSelection:
     def test_enter_emits_edit_requested(self, widget, tmp_path, qtbot):
         from PySide6.QtCore import Qt as QtConst

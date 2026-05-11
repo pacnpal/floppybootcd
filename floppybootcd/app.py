@@ -45,20 +45,38 @@ class FloppyBootCDApplication(QApplication):
         for p in pending:
             self._dispatch(p)
 
+    @staticmethod
+    def _canonicalize(path: str) -> str:
+        """Return *path* as a canonical absolute string.
+
+        FloppyImage.path is documented as absolute, and projects save
+        the image list verbatim — so a relative path landing here from
+        an `argv` shell invocation (e.g. ``floppybootcd ./boot.img``)
+        would persist into the .fbcd file and break the moment the
+        user's working directory changed. Normalize once at the
+        boundary via expanduser + resolve(strict=False) so every
+        downstream caller sees a stable absolute path. resolve() with
+        strict=False is safe on Python 3.6+ even when the target
+        doesn't yet exist; it returns the lexically-resolved absolute
+        form.
+        """
+        return str(Path(path).expanduser().resolve(strict=False))
+
     def _dispatch(self, path: str) -> None:
         """Send *path* to the right MainWindow handler based on its
         extension. .fbcd → load project; floppy image / folder → add."""
+        canonical = self._canonicalize(path)
         win = self._main_window
         if win is None:
-            self._pending_open_paths.append(path)
+            self._pending_open_paths.append(canonical)
             return
         # Late import — avoids dragging UI module into module-import
         # time and into worker subprocesses that might import app.
         from .core.image_prep import walk_floppy_images
 
-        p = Path(path)
+        p = Path(canonical)
         if p.is_file() and p.suffix.lower() == PROJECT_EXT:
-            win.open_project_path(path)
+            win.open_project_path(canonical)
             return
         found = walk_floppy_images(p)
         if found:

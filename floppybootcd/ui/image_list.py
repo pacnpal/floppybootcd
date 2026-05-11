@@ -54,23 +54,43 @@ class ImageListWidget(QListWidget):
         return {self.item(i).data(Qt.ItemDataRole.UserRole).path
                 for i in range(self.count())}
 
-    @staticmethod
-    def _url_is_useful(url) -> bool:
-        """True for a local URL that's a folder, a .fbcd project, or
-        a floppy-image file extension we accept. Used to decide
-        whether to accept the drag at hover time."""
-        if not url.isLocalFile():
-            return False
-        p = Path(url.toLocalFile())
-        if p.is_dir():
-            return True
-        if not p.is_file():
-            return False
-        ext = p.suffix.lower()
-        return ext == PROJECT_EXT or ext in ALL_ACCEPTED_EXTS
-
     def _mime_is_acceptable(self, mime) -> bool:
-        return mime.hasUrls() and any(self._url_is_useful(u) for u in mime.urls())
+        """Decide whether to accept a drag at hover time.
+
+        Three classes of URL are interesting:
+
+        * **Folders** — always accepted. We can't cheaply tell whether
+          a folder contains anything new without walking it, and
+          walking on every dragMoveEvent would stutter big drags.
+          Accept the hover; let the drop-time dedup handle a folder
+          that turns out to be all duplicates (rare and silent).
+        * **.fbcd project files** — always accepted (drops trigger an
+          open-project flow that replaces the current image list,
+          which is meaningful even if some images carry over).
+        * **Floppy-image files** — accepted only when at least one
+          path isn't already in the list. Without this check the
+          cursor showed "accept" for a drag whose drop was a pure
+          no-op, which read as a bug to the user.
+
+        URLs that aren't local files (http://, etc.) are ignored.
+        """
+        if not mime.hasUrls():
+            return False
+        existing = self._existing_paths()
+        for u in mime.urls():
+            if not u.isLocalFile():
+                continue
+            p = Path(u.toLocalFile())
+            if p.is_dir():
+                return True
+            if not p.is_file():
+                continue
+            ext = p.suffix.lower()
+            if ext == PROJECT_EXT:
+                return True
+            if ext in ALL_ACCEPTED_EXTS and str(p) not in existing:
+                return True
+        return False
 
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:
         if self._mime_is_acceptable(e.mimeData()):
