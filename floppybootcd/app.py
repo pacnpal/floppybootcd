@@ -205,7 +205,8 @@ def _parse_cli_paths(argv: list[str]) -> list[str]:
         if not past_sep and a == "--":
             past_sep = True
         elif past_sep:
-            result.append(a)          # after '--': literal path, even if empty or starts with '-'
+            if a:
+                result.append(a)       # after '--': literal path (skip empty strings)
         elif a and not a.startswith("-"):
             result.append(a)          # before '--': drop empty strings and flag-like args
     return result

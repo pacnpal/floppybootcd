@@ -59,7 +59,10 @@ def normalize_for_dedup(path: str | Path) -> str:
     Plain string equality misses these and lets duplicates slip past
     dedup. Use ``os.path.normcase(os.path.normpath(...))``: textual
     only (no filesystem queries), works on non-existent paths, and
-    handles separator + case quirks on every supported platform.
+    handles separator quirks on all platforms and case-folds on Windows
+    (``normcase`` is a no-op on POSIX, so case differences on macOS/Linux
+    are intentionally preserved — two differently-cased paths on a
+    case-sensitive filesystem refer to different files).
 
     The returned string is for ``in``-set lookups and not stored in
     the project — :class:`FloppyImage.path` keeps the original form

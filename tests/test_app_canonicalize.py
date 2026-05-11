@@ -247,11 +247,17 @@ class TestParseCliPaths:
         result = _parse_cli_paths(["-psn_0_1", "--", "-dash.img", "boot.img"])
         assert result == ["-dash.img", "boot.img"]
 
-    def test_empty_string_after_separator_kept(self):
-        # After '--' even empty strings are literal paths (unusual but
-        # the caller is responsible for that edge case).
+    def test_empty_string_after_separator_filtered(self):
+        # Empty strings after '--' are still filtered: an empty string passed
+        # to _canonicalize() resolves to CWD, which would trigger an
+        # unintended whole-directory walk.
         result = _parse_cli_paths(["--", ""])
-        assert result == [""]
+        assert result == []
+
+    def test_nonempty_path_after_separator_kept(self):
+        # Non-empty paths after '--' that start with '-' are kept intact.
+        result = _parse_cli_paths(["--", "-dash.fbcd"])
+        assert result == ["-dash.fbcd"]
 
     def test_no_args_returns_empty(self):
         assert _parse_cli_paths([]) == []
