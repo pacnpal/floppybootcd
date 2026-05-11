@@ -193,7 +193,11 @@ def test_build_command_handles_non_runtime_errors(monkeypatch, capsys):
 def test_build_command_handles_plugin_setup_errors(monkeypatch, capsys):
     project = Project(title="Build me")
     monkeypatch.setattr(cli, "_load_project", lambda _: project)
-    monkeypatch.setattr(cli, "load_plugins", lambda: (_ for _ in ()).throw(PermissionError("plugin load denied")))
+
+    def fail_load_plugins() -> None:
+        raise PermissionError("plugin load denied")
+
+    monkeypatch.setattr(cli, "load_plugins", fail_load_plugins)
     rc = cli.main(["build", "demo.fbcd", "out.iso"])
     err = capsys.readouterr().err
     assert rc == 1
@@ -204,7 +208,11 @@ def test_build_command_handles_output_path_setup_errors(monkeypatch, capsys):
     project = Project(title="Build me")
     monkeypatch.setattr(cli, "_load_project", lambda _: project)
     monkeypatch.setattr(cli, "load_plugins", lambda: None)
-    monkeypatch.setattr(cli.Path, "mkdir", lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("mkdir denied")))
+
+    def fail_mkdir(*_args, **_kwargs) -> None:
+        raise PermissionError("mkdir denied")
+
+    monkeypatch.setattr(cli.Path, "mkdir", fail_mkdir)
     rc = cli.main(["build", "demo.fbcd", "out.iso"])
     err = capsys.readouterr().err
     assert rc == 1
