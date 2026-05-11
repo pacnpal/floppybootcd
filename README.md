@@ -444,6 +444,7 @@ above.
 - [Installing uv](#installing-uv)
 - [Installing FloppyBootCD](#installing-floppybootcd)
 - [System dependency: xorriso](#system-dependency-xorriso)
+- [Command-line interface (CLI)](#command-line-interface-cli)
 - [The interface](#the-interface)
 - [Features in depth](#features-in-depth)
   - [Adding images](#adding-images)
@@ -676,6 +677,65 @@ source link and the source-offer.
 The syslinux binaries (`isolinux.bin`, `memdisk`, `menu.c32`, and the
 required support modules) are downloaded automatically from kernel.org on
 first build and cached locally. No manual setup needed.
+
+---
+
+## Command-line interface (CLI)
+
+FloppyBootCD now has a real CLI in addition to the GUI.
+
+### Usage
+
+```text
+floppybootcd [PATH ...]
+floppybootcd gui [PATH ...]
+floppybootcd validate <project.fbcd>
+floppybootcd inspect <project.fbcd> [--json]
+floppybootcd build <project.fbcd> <output.iso> [--xorriso <path>] [--keep-staging]
+floppybootcd --help
+floppybootcd --version
+```
+
+### Commands
+
+| Command | What it does |
+|---------|---------------|
+| `floppybootcd [PATH ...]` | Launches the GUI (default behavior), optionally opening images/folders/projects passed as paths. |
+| `floppybootcd gui [PATH ...]` | Explicit GUI launch form. |
+| `floppybootcd validate <project.fbcd>` | Loads a project and runs the same project checks used before ISO build. |
+| `floppybootcd inspect <project.fbcd>` | Prints a quick project summary (title, image counts, payload estimate, etc.). |
+| `floppybootcd inspect <project.fbcd> --json` | Same summary in machine-readable JSON. |
+| `floppybootcd build <project.fbcd> <output.iso>` | Builds an ISO from a project without opening the GUI. |
+
+### Build command options
+
+| Option | Meaning |
+|--------|---------|
+| `--xorriso <path>` | Override the xorriso executable to use for this build. |
+| `--keep-staging` | Keep the temporary staging directory after build (useful for debugging). |
+
+### Examples
+
+```bash
+# Launch GUI and open a project
+floppybootcd my-collection.fbcd
+
+# Validate a project in CI/shell scripts
+floppybootcd validate my-collection.fbcd
+
+# Get a machine-readable summary
+floppybootcd inspect my-collection.fbcd --json
+
+# Build an ISO headlessly
+floppybootcd build my-collection.fbcd ./dist/my-collection.iso
+```
+
+### Exit codes
+
+- `0`: success
+- `1`: command failure (for example load/build error)
+- `2`: validation failed (`validate` command found project problems) **or**
+  CLI usage/argument error reported by argparse
 
 ---
 

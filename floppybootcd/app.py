@@ -212,7 +212,9 @@ def _parse_cli_paths(argv: list[str]) -> list[str]:
     return result
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv if argv is None else argv)
+
     # HiDPI: Qt 6 enables this automatically, but be explicit for older 6.x
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -220,7 +222,7 @@ def main() -> int:
 
     _windows_setup()
 
-    app = FloppyBootCDApplication(sys.argv)
+    app = FloppyBootCDApplication(argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setOrganizationName("pacnpal")
@@ -242,7 +244,7 @@ def main() -> int:
     # and shell invocations like `floppybootcd ~/project.fbcd`.
     # See _parse_cli_paths for the filtering rules (empty-string
     # guard, `-` flag filter, and `--` end-of-options support).
-    cli_paths = _parse_cli_paths(sys.argv[1:])
+    cli_paths = _parse_cli_paths(argv[1:])
     if cli_paths:
         app._dispatch_batch(cli_paths)
 
