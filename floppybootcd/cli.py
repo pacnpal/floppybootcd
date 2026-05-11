@@ -202,8 +202,9 @@ def main(argv: list[str] | None = None) -> int:
         return _launch_gui([])
     if ns.command == "gui":
         gui_paths = list(getattr(ns, "paths", []))
-        if any(path.startswith("-") for path in gui_paths):
-            return _launch_gui(["--", *gui_paths])
+        dash_index = next((i for i, path in enumerate(gui_paths) if path.startswith("-")), -1)
+        if dash_index >= 0:
+            gui_paths = [*gui_paths[:dash_index], "--", *gui_paths[dash_index:]]
         return _launch_gui(gui_paths)
     if ns.command == "validate":
         return _run_validate(ns.project)
