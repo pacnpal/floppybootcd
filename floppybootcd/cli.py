@@ -190,7 +190,11 @@ def main(argv: list[str] | None = None) -> int:
         args = ["--help"]
     elif first == "gui":
         dash_index = next(
-            (i for i, value in enumerate(args[1:], start=1) if value.startswith("-") and value != "--"),
+            (
+                i
+                for i, value in enumerate(args[1:], start=1)
+                if value.startswith("-") and not value.startswith("--") and value != "-h"
+            ),
             -1,
         )
         if dash_index >= 0 and (dash_index == 1 or args[dash_index - 1] != "--"):
