@@ -16,7 +16,7 @@ from .. import APP_NAME, __version__
 from ..core import burner as burner_mod
 from ..core import iso_builder, syslinux_fetcher
 from ..core.bootloader import BUILTIN_BACKENDS, available_backends
-from ..core.project import FloppyImage, Project
+from ..core.project import PROJECT_EXT, FloppyImage, Project
 from .burn_dialog import BurnDialog
 from ..core import image_prep
 from ..core.image_prep import ALL_ACCEPTED_EXTS
@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         middle = QHBoxLayout()
         self.list_widget = ImageListWidget()
         self.list_widget.files_dropped.connect(self._add_paths)
+        self.list_widget.project_dropped.connect(self.open_project_path)
         self.list_widget.items_reordered.connect(self._on_list_reordered)
         self.list_widget.selection_changed.connect(self._update_selection_buttons)
         self.list_widget.itemDoubleClicked.connect(lambda _: self._edit_selected())
@@ -346,21 +347,88 @@ class MainWindow(QMainWindow):
         self._reload_from_project()
 
     def _open_project(self) -> None:
-        if not self._maybe_save():
-            return
+        # The unsaved-changes prompt lives inside open_project_path()
+        # so the Open menu, drag-and-drop, OS file-association, and CLI
+        # paths share one prompt. Calling _maybe_save() here too would
+        # double-prompt on dirty projects.
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", str(Path.home()),
-            "FloppyBootCD Project (*.fbcd);;All files (*)",
+            f"FloppyBootCD Project (*{PROJECT_EXT});;All files (*)",
         )
-        if not path:
-            return
+        if path:
+            self.open_project_path(path)
+
+    def open_project_path(self, path: str) -> bool:
+        """Load *path* as the current project.
+
+        Public so drag-and-drop on the window, the OS file-association
+        handler (macOS QFileOpenEvent / Windows file-double-click /
+        Linux ``xdg-open``), and any future scripted entry points can
+        share one code path with the File → Open menu action.
+
+        Honors the unsaved-changes prompt the menu action would: a
+        dirty current project is offered Save / Discard / Cancel
+        before the new project replaces it.
+
+        Failure semantics: a malformed .fbcd that loads but blows up
+        during ``_reload_from_project()`` (e.g. a non-int
+        ``timeout_secs`` that ``QSpinBox.setValue`` rejects) leaves
+        the window's previous project AND widgets intact — the swap
+        is all-or-nothing. A naive "assign first, reload after"
+        sequence would have left ``self.project`` pointing at the
+        new project but widgets showing the old one, an internally
+        inconsistent state where File → Save would write the new
+        project to the new path while the user stared at old data.
+
+        Returns:
+            ``True`` if the project was successfully loaded;
+            ``False`` if the user cancelled the unsaved-changes prompt
+            or if loading / reloading failed (in which case an error
+            dialog has already been shown).
+        """
+        if not self._maybe_save():
+            return False
+
+        # Snapshot before any swap so a failure can fully roll back.
+        prev_project = self.project
+        prev_path = self.project_path
+        prev_dirty = self._dirty
         try:
             self.project = Project.load(path)
             self.project_path = Path(path)
             self._dirty = False
             self._reload_from_project()
+            return True
         except Exception as e:
-            QMessageBox.critical(self, "Open failed", str(e))
+            # Atomic rollback. _reload_from_project may have partially
+            # populated some widgets before raising; re-running it
+            # against the restored project resyncs them.
+            #
+            # Order matters: _reload_from_project() unconditionally
+            # sets self._dirty = False at the end (it's the "we just
+            # loaded a fresh project, nothing's changed yet" signal
+            # for the normal success path). If we restore _dirty
+            # *before* the reload, the reload wipes it. Restore the
+            # state-bearing fields first, run the reload to resync
+            # widgets, then re-apply prev_dirty so a dirty project
+            # the user was just looking at stays marked dirty after
+            # a failed open.
+            self.project = prev_project
+            self.project_path = prev_path
+            try:
+                self._reload_from_project()
+            except Exception:
+                # If even the rollback reload fails (it shouldn't —
+                # the previous project is what was already on screen),
+                # don't mask the original error with a secondary one.
+                pass
+            self._dirty = prev_dirty
+            self._update_title()
+            QMessageBox.critical(
+                self, "Open failed",
+                f"{path}\n\n{e}",
+            )
+            return False
 
     def _save_project(self) -> bool:
         if not self.project_path:
@@ -377,13 +445,13 @@ class MainWindow(QMainWindow):
 
     def _save_project_as(self) -> bool:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Project", str(Path.home() / "untitled.fbcd"),
-            "FloppyBootCD Project (*.fbcd)",
+            self, "Save Project", str(Path.home() / f"untitled{PROJECT_EXT}"),
+            f"FloppyBootCD Project (*{PROJECT_EXT})",
         )
         if not path:
             return False
-        if not path.lower().endswith(".fbcd"):
-            path += ".fbcd"
+        if not path.lower().endswith(PROJECT_EXT):
+            path += PROJECT_EXT
         self.project_path = Path(path)
         return self._save_project()
 
@@ -433,17 +501,47 @@ class MainWindow(QMainWindow):
             self._add_paths(paths)
 
     def _add_paths(self, paths: list[str]) -> None:
-        existing = {i.path for i in self.project.images}
+        # Dedup against the current project using the same normalized
+        # form the drop handlers and hover gate use, so a path
+        # arriving via CLI / QFileOpenEvent in one casing or
+        # separator scheme can't slip past dedup against an
+        # equivalent path stored from another source. The stored
+        # FloppyImage.path keeps the user's original form for
+        # display; normalization is for comparison only. See
+        # image_prep.normalize_for_dedup for the rationale.
+        from ..core.image_prep import normalize_for_dedup
+        existing = {normalize_for_dedup(i.path) for i in self.project.images}
+        added_any = False
         for p in paths:
-            if p in existing:
+            key = normalize_for_dedup(p)
+            if key in existing:
                 continue
+            existing.add(key)  # within-call dedup too
             img = FloppyImage(path=p, label=Path(p).stem)
             self.project.images.append(img)
             self.list_widget.add_image(img)
+            added_any = True
+        # Guard side effects so a duplicate-only add (every dropped path
+        # matched an existing image) doesn't flip the project to dirty
+        # or recompute the capacity label for no reason. Without this
+        # the title bar grows a bullet after a no-op drag-drop, which
+        # then prompts an "unsaved changes?" dialog on close even
+        # though nothing changed.
+        if not added_any:
+            return
         self.project.ensure_one_default()
         self._refresh_default_marker()
         self._refresh_capacity_label()
         self._mark_dirty()
+
+    def add_paths(self, paths: list[str]) -> None:
+        """Public counterpart to :meth:`_add_paths`. Lets out-of-module
+        callers (the QFileOpenEvent dispatcher in ``app.py``, future
+        plugin entry points) feed floppy-image paths in without
+        reaching across the underscore boundary. Behavior identical
+        to ``_add_paths``: dedups, sets a default, refreshes the
+        capacity label, marks the project dirty."""
+        self._add_paths(paths)
 
     def _remove_selected(self) -> None:
         n = self.list_widget.remove_selected()
@@ -730,21 +828,59 @@ class MainWindow(QMainWindow):
         )
 
     # ── Drag-drop on window itself ───────────────────────────────────────────────────
+    # The main window is its own drop target as a backstop for when
+    # the cursor lands outside the image list widget (margins, header,
+    # log panel). It accepts the same shapes the list widget does:
+    # individual floppy images, folders to recurse, and .fbcd project
+    # files (which trigger an open-project flow instead of being added
+    # as images).
 
     def dragEnterEvent(self, e) -> None:
-        if e.mimeData().hasUrls():
+        # Delegate the actionability decision to the list widget's
+        # hover gate so the two drop targets agree on what counts.
+        # The list widget owns the existing-paths dedup check; both
+        # drop targets get the same "all duplicates → don't show
+        # accept cursor" behavior by routing through the same
+        # public method.
+        if self.list_widget.mime_is_acceptable(e.mimeData()):
             e.acceptProposedAction()
+        else:
+            e.ignore()
 
     def dropEvent(self, e) -> None:
-        if e.mimeData().hasUrls():
-            paths = []
-            for url in e.mimeData().urls():
-                if url.isLocalFile():
-                    p = url.toLocalFile()
-                    if Path(p).suffix.lower() in ALL_ACCEPTED_EXTS and Path(p).is_file():
-                        paths.append(p)
-            if paths:
-                self._add_paths(paths)
+        if not e.mimeData().hasUrls():
+            return
+        # parse_dropped_urls applies the project-wins-over-images rule
+        # and normalizes paths for dedup against the current project.
+        # Single helper lets the list-widget and window-level drops
+        # share semantics — see image_list.parse_dropped_urls.
+        from .image_list import parse_dropped_urls
+
+        existing_paths = [img.path for img in self.project.images]
+        project_path, floppy_paths = parse_dropped_urls(
+            e.mimeData().urls(), existing_paths,
+        )
+        if project_path:
+            if self.open_project_path(project_path):
+                e.acceptProposedAction()
+            else:
+                # User cancelled the unsaved-changes prompt, or the
+                # load failed (error dialog already shown). The drag
+                # was entered with acceptProposedAction(), so we must
+                # explicitly ignore here to signal "nothing changed".
+                e.ignore()
+            return
+        if floppy_paths:
+            self._add_paths(floppy_paths)
+            e.acceptProposedAction()
+            return
+        # URLs were present but none were recognized (e.g. a .txt
+        # dragged onto the window). dragEnterEvent already accepted
+        # the drag, so an implicit fall-through would leave the cursor
+        # showing the "accept" icon for an op that does nothing. Call
+        # e.ignore() so the OS reverts to the normal "drop rejected"
+        # cursor and any chained drop handlers get a fair shot.
+        e.ignore()
 
     # ── Geometry persistence ─────────────────────────────────────────────────────────
 

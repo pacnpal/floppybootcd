@@ -718,12 +718,22 @@ The star (★) marks the default boot entry.
 
 ### Adding images
 
-Three ways:
+Four ways:
 
-- **Drag from Finder/Explorer** onto the window or the image list
+- **Drag from Finder/Explorer/Nautilus** onto the window or the image list
+- **Drag a folder** — the app recurses up to five levels deep and picks
+  up every floppy image inside (skipping hidden files, `.AppleDouble`,
+  `$RECYCLE.BIN`, etc.). Caps at 1024 files per drop, limiting how many
+  images are added in one operation (very large directories are still
+  enumerated to find the lex-smallest subset, so a misdrop on a huge
+  folder may take a moment).
 - **Click "Add Images..."** in the side panel, toolbar, or **Edit** menu
   (Ctrl/Cmd+I)
-- **Open a saved `.fbcd` project file**
+- **Open a saved `.fbcd` project file** — either via File → Open, by
+  dragging the file onto the window, by double-clicking it in your file
+  manager (see [File associations](#file-associations) below for OS
+  setup), or by passing the path on the command line:
+  `floppybootcd my-collection.fbcd`
 
 Recognized extensions: `.img`, `.ima`, `.vfd`, `.flp`, and `.imz`
 (WinImage compressed images, ZIP-format — extracted automatically at
@@ -893,6 +903,99 @@ disc is left in the drive so you can examine it.
 > (`/dev/sr0`, etc.). If your user isn't in the `cdrom` group, you'll see a
 > permission denied warning. Add yourself with `sudo usermod -aG cdrom $USER`
 > then log out and back in.
+
+---
+
+## File associations
+
+Each OS-native package format handles `.fbcd` file associations, but
+the mechanism differs by platform. On **macOS** and **Linux** (`.deb`
+/ `.rpm`) the association is **automatic** — double-clicking a `.fbcd`
+file in your file manager opens FloppyBootCD with that project loaded
+right after install. On **Windows** (`.zip` bundle) the association is
+**opt-in** and requires running the included `register-fbcd-windows.bat`
+once after extracting the archive. See each platform's section below.
+
+### macOS (`.app` bundle)
+
+Automatic. The `.app`'s `Info.plist` declares `CFBundleDocumentTypes`
+and a `UTExportedTypeDeclarations` entry for `com.pacnpal.floppybootcd.project`,
+so Launch Services binds `.fbcd` to FloppyBootCD the first time you
+launch the app or drag it to `/Applications`. Finder routes double-clicks
+via Apple Events; the runtime catches them through a `QFileOpenEvent`
+handler (see `floppybootcd/app.py`, `FloppyBootCDApplication.event()`).
+
+The same handler also covers:
+
+- Dragging a `.fbcd` onto the FloppyBootCD icon in the Dock
+- File → Open Recent in the global menu bar (once you've opened a few)
+- `open -a FloppyBootCD foo.fbcd` from a terminal
+
+If the association doesn't stick (e.g. multiple copies of the .app in
+different folders), re-bless it once with:
+
+```bash
+duti -s com.pacnpal.floppybootcd fbcd all
+# or right-click a .fbcd file → Get Info → Open with → FloppyBootCD → Change All
+```
+
+### Linux (`.deb` / `.rpm` / AppImage)
+
+The `.deb` and `.rpm` install a Freedesktop shared-mime-info entry
+(`/usr/share/mime/packages/floppybootcd.xml` defining
+`application/x-floppybootcd-project` matching `*.fbcd`) plus a
+`.desktop` file with `MimeType=application/x-floppybootcd-project;`.
+A post-install hook runs `update-mime-database` and
+`update-desktop-database` so Nautilus / Dolphin / Thunar pick up the
+new type immediately. After install, `.fbcd` double-clicks open
+FloppyBootCD.
+
+The **AppImage** doesn't auto-register (AppImages are self-contained
+and intentionally avoid touching the host system). If you want the
+association from an AppImage, run [appimaged](https://github.com/probonopd/go-appimage)
+once — it sets up file associations for every AppImage on your
+system. Or extract the MIME XML from the AppImage and install it
+manually:
+
+```bash
+./floppybootcd-*.AppImage --appimage-extract
+sudo cp squashfs-root/usr/share/mime/packages/floppybootcd.xml \
+        /usr/share/mime/packages/
+sudo cp squashfs-root/usr/share/applications/floppybootcd.desktop \
+        /usr/share/applications/
+sudo update-mime-database /usr/share/mime
+sudo update-desktop-database /usr/share/applications
+```
+
+### Windows (`.zip` bundle)
+
+The zip ships **`register-fbcd-windows.bat`** and
+**`unregister-fbcd-windows.bat`** at the top level alongside
+`floppybootcd.exe`. The first time you set up the app:
+
+1. Extract the zip anywhere (`%LOCALAPPDATA%\FloppyBootCD\`,
+   `C:\Tools\floppybootcd\`, a USB stick — wherever).
+2. Double-click `register-fbcd-windows.bat`. It uses `%~dp0` to read
+   its own folder and writes `reg add /t REG_EXPAND_SZ` entries for
+   `.fbcd`, so the registered command points at *whichever* folder
+   you extracted to. No hand-editing required.
+3. `.fbcd` files now show the FloppyBootCD icon and open the app on
+   double-click.
+
+Registration is per-user (`HKCU\Software\Classes`) so it doesn't
+require admin elevation and won't conflict with another user on the
+same machine. To revert, double-click `unregister-fbcd-windows.bat`.
+
+Why `.bat` and not a hand-edited `.reg`? `.reg` files write registry
+values as `REG_SZ` by default, and `REG_SZ` doesn't expand
+environment variables (`%LOCALAPPDATA%`, `%~dp0`, etc.) at lookup
+time. Windows would launch the literal path `%LOCALAPPDATA%\…` and
+fail. `reg add /t REG_EXPAND_SZ` writes the correct expandable
+string type.
+
+If you'd rather not touch the registry, dragging a `.fbcd` file onto
+the FloppyBootCD window still works (Qt's drag-and-drop handles it
+without any OS-level registration).
 
 ---
 

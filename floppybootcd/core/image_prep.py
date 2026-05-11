@@ -11,6 +11,8 @@ user-facing error.
 from __future__ import annotations
 
 import functools
+import heapq
+import os
 import re
 import shutil
 import zipfile
@@ -39,6 +41,165 @@ CD_USABLE_BYTES: int = CD_R_CAPACITY_BYTES - CD_OVERHEAD_BYTES
 def is_compressed(path: str | Path) -> bool:
     """True if *path* names a compressed floppy container we extract."""
     return Path(path).suffix.lower() in COMPRESSED_EXTS
+
+
+def normalize_for_dedup(path: str | Path) -> str:
+    """Canonical string form of *path* for duplicate-detection only.
+
+    Different ingestion paths can produce textually-different strings
+    for the same file:
+
+    * ``QUrl.toLocalFile()`` returns forward slashes on Windows
+      (``C:/dos/boot.img``).
+    * ``os.scandir`` and ``pathlib`` return native separators
+      (``C:\\dos\\boot.img``).
+    * Mixed-case drive letters (``c:\\…`` vs ``C:\\…``) are the same
+      file on Windows but unequal as strings.
+
+    Plain string equality misses these and lets duplicates slip past
+    dedup. Use ``os.path.normcase(os.path.normpath(...))``: textual
+    only (no filesystem queries), works on non-existent paths, and
+    handles separator quirks on all platforms and case-folds on Windows
+    (``normcase`` is a no-op on POSIX, so case differences on macOS/Linux
+    are intentionally preserved — two differently-cased paths on a
+    case-sensitive filesystem refer to different files).
+
+    The returned string is for ``in``-set lookups and not stored in
+    the project — :class:`FloppyImage.path` keeps the original form
+    so the UI displays paths as the user supplied them.
+    """
+    return os.path.normcase(os.path.normpath(str(path)))
+
+
+# Recursion cap for folder drops. A drag-and-drop is a user gesture
+# meant to express "all the disks in this pile" — not "scan my whole
+# home directory". Five levels deep is generous for any realistic
+# floppy-collection layout (e.g. <year>/<vendor>/<product>/<disk>)
+# without turning a wrong-folder drop into a multi-minute disk scan.
+_DROP_RECURSION_LIMIT = 5
+
+# Per-drop file cap. Anything more than this is almost certainly a
+# misdrop (user grabbed the wrong folder); silently truncate and let
+# the UI show what made it in.
+_DROP_FILE_LIMIT = 1024
+
+# Per-directory cap on the kept (post-sort) entry count. heapq.nsmallest
+# below iterates the whole directory but only retains the N
+# lexicographically-smallest names, so memory + downstream work stay
+# bounded regardless of how many entries a misdropped folder has, and
+# the kept subset is the same on every filesystem (deterministic).
+# Set to 8x the per-drop file cap so a typical "folder of floppies"
+# (a few hundred files) easily fits while a pathological misdrop
+# (~/Downloads, /, the desktop) still terminates with a stable
+# lex-smallest prefix.
+_DROP_DIR_SCAN_CAP = _DROP_FILE_LIMIT * 8
+
+
+def walk_floppy_images(path: str | Path) -> list[str]:
+    """Return floppy-image paths discovered at *path*.
+
+    File case
+        If *path* is a file with a recognized extension, returns it
+        as a single-element list. This branch is intentionally
+        permissive — the user explicitly named the file, so hidden-
+        name and other cruft filters do **not** apply. Dropping
+        ``~/.private/boot.img`` directly will return it.
+
+    Directory case
+        If *path* is a directory, walks it depth-first and returns
+        floppy images inside, subject to three caps:
+
+        * **Recursion depth ≤ ``_DROP_RECURSION_LIMIT`` levels**
+          (currently 5). Anything deeper is silently skipped — a
+          misdrop on ``~`` or ``/`` doesn't recurse the whole tree.
+        * **Per-directory retained subset ≤ ``_DROP_DIR_SCAN_CAP``**
+          (currently 8× the file cap). ``heapq.nsmallest`` fully
+          iterates the underlying ``os.scandir`` stream to find the
+          lex-smallest N entries — so the time spent grows with the
+          number of entries in the directory, not just the cap. For
+          pathological directories (millions of entries) this can
+          still take time. The cap limits only how many entries are
+          *retained* for downstream work and kept in memory; the
+          kept subset is the same on every filesystem
+          (deterministic), but it is **not** the entire directory.
+        * **Global result ≤ ``_DROP_FILE_LIMIT`` files**
+          (currently 1024). Traversal stops once the cap is hit.
+
+        Within those caps, ordering is depth-first with each
+        directory's entries lex-sorted (deterministic for a given
+        filesystem layout; files group by their containing
+        directory, *not* a global lex sort).
+
+        During directory walking the following entries are skipped:
+        hidden names (``.foo``), dot-directories, and the
+        platform-specific cruft folders ``.AppleDouble``,
+        ``$RECYCLE.BIN``, ``System Volume Information`` — so drops
+        on cloud-synced collections behave predictably. These
+        filters apply *only* in the directory branch; see the file
+        case above for the contrast.
+
+    Any other *path* (nonexistent, special file) returns ``[]``.
+    """
+    p = Path(path)
+    if p.is_file():
+        return [str(p)] if p.suffix.lower() in ALL_ACCEPTED_EXTS else []
+    if not p.is_dir():
+        return []
+
+    skip_dir_names = {".AppleDouble", "$RECYCLE.BIN", "System Volume Information"}
+    results: list[str] = []
+
+    def _walk(d: Path, depth: int) -> None:
+        if depth > _DROP_RECURSION_LIMIT or len(results) >= _DROP_FILE_LIMIT:
+            return
+        # os.scandir + heapq.nsmallest gives us deterministic,
+        # bounded-memory directory enumeration. `sorted(iterdir())`
+        # was O(N log N) and ate memory proportional to the source
+        # dir size. A previous attempt at `sorted(islice(scandir, N))`
+        # bounded memory but was non-deterministic for dirs > N
+        # entries because os.scandir's iteration order isn't
+        # specified — the *subset* selected by islice depended on
+        # the filesystem and could vary between runs.
+        # heapq.nsmallest iterates the full scandir but only retains
+        # the N lex-smallest entries, so memory stays bounded AND
+        # the subset is stable across filesystems and runs.
+        # DirEntry objects hold cached name + stat info populated
+        # during scandir, so they remain valid (and avoid extra
+        # syscalls) after the scandir context closes.
+        try:
+            with os.scandir(d) as it:
+                entries = heapq.nsmallest(
+                    _DROP_DIR_SCAN_CAP, it, key=lambda e: e.name,
+                )
+        except OSError:
+            return
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            # DirEntry.is_dir() / is_file() use cached stat data
+            # populated by the OS during scandir, so they don't
+            # cost an extra syscall per entry the way Path versions
+            # would.
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    if entry.name in skip_dir_names:
+                        continue
+                    _walk(Path(entry.path), depth + 1)
+                    if len(results) >= _DROP_FILE_LIMIT:
+                        return
+                elif entry.is_file(follow_symlinks=False):
+                    if Path(entry.name).suffix.lower() in ALL_ACCEPTED_EXTS:
+                        results.append(entry.path)
+                        if len(results) >= _DROP_FILE_LIMIT:
+                            return
+            except OSError:
+                # Permission denied / unreadable entry — skip and
+                # keep scanning; one bad entry shouldn't abort the
+                # whole drop.
+                continue
+
+    _walk(p, 0)
+    return results
 
 
 # Characters SYSLINUX/ISOLINUX can't tolerate in an APPEND path

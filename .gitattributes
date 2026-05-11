@@ -1,0 +1,11 @@
+# Windows batch files MUST have CRLF — cmd.exe will choke on LF-only .bat
+# scripts in subtle ways (multi-line REM blocks, parenthesized IF bodies,
+# trailing-whitespace parsing). Force CRLF in the index and on checkout
+# across every platform so the Windows zip artifact always ships with the
+# right endings regardless of which OS produced the build.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Everything else: let git pick a default, normalize text on commit, leave
+# binary alone.
+* text=auto

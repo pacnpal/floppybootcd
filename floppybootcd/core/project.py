@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 
+# Canonical extension for FloppyBootCD project files. Centralized so
+# the UI's drag-and-drop / file-dialog filters and any future
+# .desktop / file-association config all read from one place.
+PROJECT_EXT = ".fbcd"
+
+
 @dataclass
 class FloppyImage:
     """One floppy image entry in a project."""

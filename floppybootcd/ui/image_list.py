@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
@@ -10,19 +11,86 @@ from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 from ..core.image_prep import (
     ALL_ACCEPTED_EXTS,
     COMPRESSED_EXTS,
+    normalize_for_dedup,
     probe_uncompressed_size,
+    walk_floppy_images,
 )
-from ..core.project import FloppyImage
+from ..core.project import PROJECT_EXT, FloppyImage
+
+
+def parse_dropped_urls(
+    urls: Iterable, existing_paths: Iterable[str]
+) -> tuple[str | None, list[str]]:
+    """Resolve a sequence of QUrls into a (project_path, image_paths) tuple.
+
+    Shared between :class:`ImageListWidget.dropEvent` and
+    :meth:`MainWindow.dropEvent` so the drop semantics stay
+    consistent between the two drop targets:
+
+    * **Project wins:** if any URL has a ``.fbcd`` suffix, return it as
+      ``project_path`` and an empty image list (project replacement
+      makes any image drops moot). Matched by suffix alone — consistent
+      with the CLI / QFileOpenEvent dispatcher — so that non-existent
+      paths, broken symlinks, and directories named ``*.fbcd`` are all
+      forwarded to ``open_project_path()`` which surfaces the error.
+      Pre-scan in one cheap pass so we don't waste UI-thread time
+      recursing a 100k-entry folder whose result we'd then throw away.
+    * **Otherwise:** walk every URL via :func:`walk_floppy_images`
+      (recurses folders, filters by extension), dedup against
+      *existing_paths* using :func:`normalize_for_dedup` so paths
+      from ``QUrl.toLocalFile()`` (forward slashes on Windows) and
+      from ``os.scandir`` (native separators) compare equal.
+    * Non-local URLs (``http://``, ``smb://``, …) are silently skipped.
+
+    Returns
+    -------
+    (project_path, image_paths)
+        Exactly one of these will be non-empty; the other is
+        ``None`` / ``[]``. A drag of e.g. only a ``.txt`` returns
+        ``(None, [])``.
+    """
+    urls = list(urls)
+    for u in urls:
+        if not u.isLocalFile():
+            continue
+        p = Path(u.toLocalFile())
+        # Route by suffix alone — consistent with the CLI / QFileOpenEvent
+        # dispatcher's suffix-only routing. Let open_project_path() surface
+        # the error for paths that don't exist or aren't regular files (e.g.
+        # broken symlinks, directories named *.fbcd).
+        if p.suffix.lower() == PROJECT_EXT:
+            return str(p), []
+
+    existing_norm = {normalize_for_dedup(p) for p in existing_paths}
+    image_paths: list[str] = []
+    seen_norm: set[str] = set()
+    for u in urls:
+        if not u.isLocalFile():
+            continue
+        for found in walk_floppy_images(Path(u.toLocalFile())):
+            key = normalize_for_dedup(found)
+            if key in existing_norm or key in seen_norm:
+                continue
+            seen_norm.add(key)
+            image_paths.append(found)
+    return None, image_paths
 
 
 class ImageListWidget(QListWidget):
     """List of floppy images. Supports:
        - drag-reorder within the list (InternalMove)
-       - drag external files in from the OS file manager
+       - drag external floppy images in from the OS file manager
+         (.img / .ima / .vfd / .flp / .imz)
+       - drag whole folders in — recurses up to five levels and
+         picks up every floppy image inside
+       - drag a .fbcd project file in — emits ``project_dropped`` so
+         the host window can load the project instead of treating it
+         as a floppy image
        - keyboard delete to remove items
     """
 
     files_dropped = Signal(list)         # list[str] of paths dropped from outside
+    project_dropped = Signal(str)        # absolute path to a dropped .fbcd file
     items_reordered = Signal()
     selection_changed = Signal()         # convenience signal
     edit_requested = Signal()            # Enter pressed on a selection
@@ -42,45 +110,130 @@ class ImageListWidget(QListWidget):
 
     # ── Drag-and-drop ─────────────────────────────────────────────────────────
 
-    def _mime_has_external_files(self, mime) -> bool:
-        return mime.hasUrls() and any(
-            u.isLocalFile() and u.toLocalFile() not in self._existing_paths()
-            for u in mime.urls()
-        )
-
     def _existing_paths(self) -> set[str]:
-        return {self.item(i).data(Qt.ItemDataRole.UserRole).path
+        """Set of currently-listed image paths, normalized for dedup
+        comparison (separators + case). See
+        :func:`normalize_for_dedup` for the rationale."""
+        return {normalize_for_dedup(
+            self.item(i).data(Qt.ItemDataRole.UserRole).path)
                 for i in range(self.count())}
 
+    def mime_is_acceptable(self, mime) -> bool:
+        """Decide whether to accept a drag at hover time.
+
+        Three classes of URL are interesting:
+
+        * **Folders** — always accepted. We can't cheaply tell whether
+          a folder contains anything new without walking it, and
+          walking on every dragMoveEvent would stutter big drags.
+          Accept the hover; let the drop-time dedup handle a folder
+          that turns out to be all duplicates (rare and silent).
+        * **.fbcd project files** — always accepted (drops trigger an
+          open-project flow that replaces the current image list,
+          which is meaningful even if some images carry over).
+        * **Floppy-image files** — accepted only when at least one
+          path isn't already in the list. Without this check the
+          cursor showed "accept" for a drag whose drop was a pure
+          no-op, which read as a bug to the user.
+
+        URLs that aren't local files (http://, etc.) are ignored.
+        """
+        if not mime.hasUrls():
+            return False
+        existing = self._existing_paths()  # already normalized
+        for u in mime.urls():
+            if not u.isLocalFile():
+                continue
+            p = Path(u.toLocalFile())
+            if p.is_dir():
+                return True
+            # Check PROJECT_EXT by suffix *before* the is_file() gate so
+            # that broken symlinks / directories named *.fbcd also accept
+            # the hover cursor and route to open_project_path() on drop —
+            # consistent with parse_dropped_urls() and the CLI dispatcher.
+            ext = p.suffix.lower()
+            if ext == PROJECT_EXT:
+                return True
+            if not p.is_file():
+                continue
+            if (ext in ALL_ACCEPTED_EXTS
+                    and normalize_for_dedup(p) not in existing):
+                return True
+        return False
+
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:
-        if e.mimeData().hasUrls():
+        mime = e.mimeData()
+        if self.mime_is_acceptable(mime):
             e.acceptProposedAction()
+        elif mime.hasUrls():
+            # URL-based drag we explicitly don't want (unknown
+            # extension, all duplicates, .txt). Without an explicit
+            # ignore() the QListWidget base class — with
+            # setAcceptDrops(True) and DragDropMode.DragDrop on —
+            # may still accept it as a candidate model item, which
+            # would re-show the misleading "accept" cursor for a
+            # drop we'd silently no-op.
+            e.ignore()
         else:
+            # Internal drag (item reorder); the base class knows
+            # what to do.
             super().dragEnterEvent(e)
 
     def dragMoveEvent(self, e: QDragMoveEvent) -> None:
-        if e.mimeData().hasUrls() and self._mime_has_external_files(e.mimeData()):
+        mime = e.mimeData()
+        if self.mime_is_acceptable(mime):
             e.acceptProposedAction()
+        elif mime.hasUrls():
+            e.ignore()
         else:
             super().dragMoveEvent(e)
 
     def dropEvent(self, e: QDropEvent) -> None:
-        if e.mimeData().hasUrls() and self._mime_has_external_files(e.mimeData()):
-            paths = []
-            for url in e.mimeData().urls():
-                if url.isLocalFile():
-                    p = url.toLocalFile()
-                    ext = Path(p).suffix.lower()
-                    if Path(p).is_file() and ext in ALL_ACCEPTED_EXTS:
-                        paths.append(p)
-            if paths:
-                self.files_dropped.emit(paths)
+        mime = e.mimeData()
+        if mime.hasUrls():
+            # All URL drops route through this branch — never fall
+            # through to super().dropEvent for a URL-bearing event.
+            # QListWidget's base implementation, with setAcceptDrops
+            # and DragDrop mode, treats unhandled URLs as candidates
+            # for the model and can insert raw QListWidgetItems
+            # holding URL strings, which then crash _apply_exists_color
+            # (it expects FloppyImage in UserRole, finds None on a
+            # base-class item). Explicit handling here keeps the
+            # widget's invariant — "every row is a FloppyImage" —
+            # intact regardless of what the user drops.
+            if not self.mime_is_acceptable(mime):
+                e.ignore()
+                return
+            # Both this widget and the main window route external
+            # drops through parse_dropped_urls() so the two drop
+            # targets always agree on what counts. See that helper
+            # for the full project-wins / dedup contract.
+            existing_paths = [
+                self.item(i).data(Qt.ItemDataRole.UserRole).path
+                for i in range(self.count())
+            ]
+            project_path, floppy_paths = parse_dropped_urls(
+                mime.urls(), existing_paths,
+            )
+            if project_path:
+                self.project_dropped.emit(project_path)
+                e.acceptProposedAction()
+                return
+            if floppy_paths:
+                self.files_dropped.emit(floppy_paths)
                 e.acceptProposedAction()
                 return
             e.ignore()
             return
+        # No URLs: internal drag-reorder (or some other non-URL drag
+        # the base class knows about). Only emit items_reordered for
+        # genuine in-widget moves — falling through to super() for
+        # an external non-URL drop used to fire items_reordered too,
+        # which marked the project dirty even though nothing changed.
+        was_internal = e.source() is self
         super().dropEvent(e)
-        self.items_reordered.emit()
+        if was_internal:
+            self.items_reordered.emit()
 
     # ── Convenience ───────────────────────────────────────────────────────────
 

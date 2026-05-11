@@ -163,6 +163,183 @@ class TestDropEventAccepts:
         assert emitted == []
 
 
+class TestParseDroppedUrls:
+    """Tests for the parse_dropped_urls() helper that underpins
+    both the list-widget and window-level drop semantics."""
+
+    def _urls_from(self, paths):
+        from PySide6.QtCore import QUrl
+        return [QUrl.fromLocalFile(str(p)) for p in paths]
+
+    def test_nonexistent_fbcd_routes_as_project(self, tmp_path):
+        """A .fbcd path that doesn't exist on disk must still be returned
+        as a project path so open_project_path() can surface the error.
+        Previously is_file() was tested first, causing a silent no-op."""
+        from floppybootcd.ui.image_list import parse_dropped_urls
+        p = tmp_path / "missing.fbcd"  # deliberately not created
+        project_path, image_paths = parse_dropped_urls(self._urls_from([p]), [])
+        assert project_path == str(p)
+        assert image_paths == []
+
+    def test_existing_fbcd_routes_as_project(self, tmp_path):
+        """An existing .fbcd file is correctly identified as a project."""
+        from floppybootcd.ui.image_list import parse_dropped_urls
+        p = tmp_path / "real.fbcd"
+        p.write_bytes(b"{}")
+        project_path, image_paths = parse_dropped_urls(self._urls_from([p]), [])
+        assert project_path == str(p)
+        assert image_paths == []
+
+    def test_image_file_routes_as_image(self, tmp_path):
+        """A .img file is not a project and routes to image_paths."""
+        from floppybootcd.ui.image_list import parse_dropped_urls
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        project_path, image_paths = parse_dropped_urls(self._urls_from([f]), [])
+        assert project_path is None
+        assert len(image_paths) == 1
+        assert image_paths[0] == str(f)
+
+
+class TestMimeIsAcceptable:
+    """The hover gate decides whether the cursor shows the OS
+    'accept' icon. It needs to reject drags that drop into a no-op
+    (e.g. all files already in the list), otherwise the cursor
+    misleads the user."""
+
+    def _mime_with(self, paths):
+        from PySide6.QtCore import QMimeData, QUrl
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+        return mime
+
+    def test_accepts_new_image_file(self, widget, tmp_path):
+        f = tmp_path / "new.img"
+        f.write_bytes(b"x")
+        assert widget.mime_is_acceptable(self._mime_with([f])) is True
+
+    def test_rejects_when_all_files_already_in_list(self, widget, tmp_path):
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        widget.add_image(FloppyImage(path=str(f)))
+        # Dragging the same file again must NOT show the accept cursor —
+        # dropping would be a pure no-op and the cursor would lie.
+        assert widget.mime_is_acceptable(self._mime_with([f])) is False
+
+    def test_accepts_mixed_dup_and_new(self, widget, tmp_path):
+        dup = tmp_path / "dup.img"
+        dup.write_bytes(b"x")
+        new = tmp_path / "new.img"
+        new.write_bytes(b"y")
+        widget.add_image(FloppyImage(path=str(dup)))
+        # At least one file in the drag is new → accept.
+        assert widget.mime_is_acceptable(self._mime_with([dup, new])) is True
+
+    def test_accepts_folder_drop_unconditionally(self, widget, tmp_path):
+        # We can't cheaply tell whether a folder contains anything new
+        # without walking it at hover time; accept it and let the drop
+        # path dedup.
+        folder = tmp_path / "boot-disks"
+        folder.mkdir()
+        assert widget.mime_is_acceptable(self._mime_with([folder])) is True
+
+    def test_accepts_fbcd_project_drop(self, widget, tmp_path):
+        p = tmp_path / "project.fbcd"
+        p.write_bytes(b"{}")
+        assert widget.mime_is_acceptable(self._mime_with([p])) is True
+
+    def test_accepts_nonexistent_fbcd_by_suffix(self, widget, tmp_path):
+        """A .fbcd path that doesn't exist on disk (broken symlink / bad
+        shortcut) must still be accepted by the hover gate so it routes
+        to open_project_path() which shows the 'Open failed' dialog.
+        Previously is_file() was checked first, which caused a silent no-op."""
+        p = tmp_path / "missing.fbcd"  # deliberately not created
+        assert widget.mime_is_acceptable(self._mime_with([p])) is True
+
+    def test_rejects_unknown_extension(self, widget, tmp_path):
+        f = tmp_path / "readme.txt"
+        f.write_bytes(b"x")
+        assert widget.mime_is_acceptable(self._mime_with([f])) is False
+
+
+class TestDragEnterExplicitIgnore:
+    """dragEnterEvent / dragMoveEvent must call e.ignore() (not fall
+    through to QListWidget's super) for URL-based drags that
+    mime_is_acceptable rejects. Without that explicit ignore, the
+    base class — with setAcceptDrops(True) + DragDropMode.DragDrop
+    — could re-accept the drag and reintroduce the misleading
+    'accept' cursor for unknown extensions / all-duplicate drags.
+
+    Note on the inlining: QDropEvent / QDragEnterEvent hold a
+    *non-owning* C++ pointer to the QMimeData passed in (Qt docs say
+    "QMimeData is owned by the calling code"). If the QMimeData's
+    Python wrapper goes out of scope before widget.dragEnterEvent()
+    fires, the C++ pointer dangles and PySide6 segfaults on
+    e.mimeData(). The existing TestDropEventAccepts pattern that
+    keeps `mime` as a local variable in the same scope as the event
+    is the safe one — replicating it here in each test instead of
+    factoring through a helper that returns just the event.
+    """
+
+    def test_unrecognized_url_is_ignored(self, widget, tmp_path):
+        """Dragging a .txt URL onto the list must produce ignore(),
+        not the cursor's 'accept' state."""
+        from PySide6.QtCore import QMimeData, QPoint, QUrl, Qt
+        from PySide6.QtGui import QDragEnterEvent
+        f = tmp_path / "readme.txt"
+        f.write_bytes(b"x")
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(f))])
+        ev = QDragEnterEvent(
+            QPoint(0, 0),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        widget.dragEnterEvent(ev)
+        assert ev.isAccepted() is False
+
+    def test_accepted_url_sets_accepted(self, widget, tmp_path):
+        """Sanity counter-test: a recognized image URL DOES end up
+        accepted."""
+        from PySide6.QtCore import QMimeData, QPoint, QUrl, Qt
+        from PySide6.QtGui import QDragEnterEvent
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(f))])
+        ev = QDragEnterEvent(
+            QPoint(0, 0),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        widget.dragEnterEvent(ev)
+        assert ev.isAccepted() is True
+
+    def test_all_duplicate_url_is_ignored(self, widget, tmp_path):
+        """A drag of a file already present in the list must be
+        ignored (no misleading accept cursor for a no-op drop)."""
+        from PySide6.QtCore import QMimeData, QPoint, QUrl, Qt
+        from PySide6.QtGui import QDragEnterEvent
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        widget.add_image(FloppyImage(path=str(f)))
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(f))])
+        ev = QDragEnterEvent(
+            QPoint(0, 0),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        widget.dragEnterEvent(ev)
+        assert ev.isAccepted() is False
+
+
 class TestEnterKeyEditsSelection:
     def test_enter_emits_edit_requested(self, widget, tmp_path, qtbot):
         from PySide6.QtCore import Qt as QtConst
@@ -187,10 +364,16 @@ class TestEnterKeyEditsSelection:
 
 class TestExistingPaths:
     def test_existing_paths_set(self, widget, tmp_path):
+        # _existing_paths() returns dedup-normalized keys (case- and
+        # separator-folded) so paths from QUrl.toLocalFile() with
+        # forward slashes and paths from pathlib with native
+        # separators compare equal. Membership check needs to use
+        # the same normalization the widget applies internally.
+        from floppybootcd.core.image_prep import normalize_for_dedup
         f = tmp_path / "a.img"
         f.write_bytes(b"x")
         widget.add_image(FloppyImage(path=str(f)))
-        assert str(f) in widget._existing_paths()
+        assert normalize_for_dedup(str(f)) in widget._existing_paths()
 
     def test_existing_paths_empty_for_empty_widget(self, widget):
         assert widget._existing_paths() == set()

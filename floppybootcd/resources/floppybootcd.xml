@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Freedesktop.org shared MIME info for FloppyBootCD project files.
+
+  Installed by the .deb / .rpm / AppImage packaging to
+  /usr/share/mime/packages/floppybootcd.xml. After install, the
+  package post-install hook runs `update-mime-database /usr/share/mime`
+  and `update-desktop-database /usr/share/applications` so file
+  managers (Nautilus, Dolphin, Thunar, ...) pick up the new type
+  and route `.fbcd` double-clicks to FloppyBootCD.
+
+  Spec: https://specifications.freedesktop.org/shared-mime-info-spec/
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-floppybootcd-project">
+    <comment>FloppyBootCD project</comment>
+    <comment xml:lang="en">FloppyBootCD project</comment>
+    <generic-icon name="application-x-cd-image"/>
+    <icon name="floppybootcd"/>
+    <glob pattern="*.fbcd"/>
+    <magic priority="50">
+      <!-- .fbcd files are JSON. The Project.save() output always
+           begins with a "{" newline followed by '"title":' — the
+           first key in asdict() ordering. Match on that to keep us
+           from false-positiving on every random JSON object. -->
+      <match value="{" type="string" offset="0">
+        <match value="&quot;title&quot;:" type="string" offset="2:64"/>
+      </match>
+    </magic>
+  </mime-type>
+</mime-info>

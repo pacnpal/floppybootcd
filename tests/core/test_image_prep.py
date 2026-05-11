@@ -78,6 +78,164 @@ class TestStagedFilename:
         assert image_prep.staged_filename("BOOT.IMG") == "BOOT.IMG"
 
 
+class TestWalkFloppyImages:
+    """Drag-drop folder recursion: walk_floppy_images() flattens a
+    dropped path into a deduped, deterministic list of floppy-ext
+    file paths."""
+
+    def test_single_file_returned_as_one_element_list(self, tmp_path):
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"")
+        assert image_prep.walk_floppy_images(f) == [str(f)]
+
+    def test_single_file_with_unknown_ext_returns_empty(self, tmp_path):
+        f = tmp_path / "boot.txt"
+        f.write_bytes(b"")
+        assert image_prep.walk_floppy_images(f) == []
+
+    def test_folder_recursed_for_floppy_images(self, tmp_path):
+        # tmp_path/
+        #   a.img
+        #   nested/
+        #     b.ima
+        #     c.imz
+        #     deep/d.vfd
+        (tmp_path / "a.img").write_bytes(b"")
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        (nested / "b.ima").write_bytes(b"")
+        (nested / "c.imz").write_bytes(b"")
+        deep = nested / "deep"
+        deep.mkdir()
+        (deep / "d.vfd").write_bytes(b"")
+        # Unrelated files
+        (tmp_path / "readme.txt").write_bytes(b"")
+        (nested / "thumbs.db").write_bytes(b"")
+
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert sorted(names) == ["a.img", "b.ima", "c.imz", "d.vfd"]
+
+    def test_folder_skips_hidden_files_and_dirs(self, tmp_path):
+        (tmp_path / ".hidden.img").write_bytes(b"")
+        (tmp_path / "good.img").write_bytes(b"")
+        hidden_dir = tmp_path / ".cache"
+        hidden_dir.mkdir()
+        (hidden_dir / "evicted.img").write_bytes(b"")
+
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert names == ["good.img"]
+
+    def test_file_path_with_hidden_name_is_not_skipped(self, tmp_path):
+        """Hidden-name filtering applies to directory walking only.
+        Dropping a hidden file directly means the user explicitly
+        named it — return it without filtering."""
+        f = tmp_path / ".secret-boot.img"
+        f.write_bytes(b"")
+        # File case: explicit choice → return.
+        assert image_prep.walk_floppy_images(f) == [str(f)]
+        # Directory case (containing the same hidden file) → skip.
+        # Counter-test that keeps the two semantics paired so a
+        # future change to one branch surfaces here too.
+        assert image_prep.walk_floppy_images(tmp_path) == []
+
+    def test_folder_skips_apple_double_and_recycle_dirs(self, tmp_path):
+        (tmp_path / "real.img").write_bytes(b"")
+        for trash in (".AppleDouble", "$RECYCLE.BIN", "System Volume Information"):
+            d = tmp_path / trash
+            d.mkdir()
+            (d / "evicted.img").write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert names == ["real.img"]
+
+    def test_nonexistent_path_returns_empty(self, tmp_path):
+        assert image_prep.walk_floppy_images(tmp_path / "missing") == []
+
+    def test_results_are_sorted_deterministic(self, tmp_path):
+        # Add files in reverse alpha order; expect sorted output back.
+        for name in ("z.img", "y.img", "a.img", "m.img"):
+            (tmp_path / name).write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = [Path(p).name for p in found]
+        assert names == sorted(names)
+
+    def test_recursion_depth_limit_truncates(self, tmp_path):
+        """Folders deeper than _DROP_RECURSION_LIMIT are not descended
+        into — a wrong-folder drop on a deep tree (e.g. ~/) doesn't
+        spend minutes walking the entire filesystem."""
+        # One image at every depth from 0 up to limit + 3.
+        limit = image_prep._DROP_RECURSION_LIMIT
+        cur = tmp_path
+        for d in range(limit + 4):
+            (cur / f"at-depth-{d}.img").write_bytes(b"")
+            sub = cur / f"d{d}"
+            sub.mkdir()
+            cur = sub
+        # The leaf gets one more file too, so we have a file at
+        # depth = limit + 4 — definitively past the cap.
+        (cur / "way-too-deep.img").write_bytes(b"")
+
+        found = image_prep.walk_floppy_images(tmp_path)
+        depths_found = sorted({int(Path(p).name.split("-")[2].split(".")[0])
+                               for p in found if Path(p).name.startswith("at-depth-")})
+        # Everything at depth 0..limit must be in the result; anything
+        # past the cap must NOT be.
+        assert depths_found == list(range(limit + 1))
+        assert not any("way-too-deep" in p for p in found)
+
+    def test_file_cap_truncates(self, tmp_path, monkeypatch):
+        """A drop can pull at most _DROP_FILE_LIMIT files in. Lower the
+        cap so the test stays fast; the real cap (1024) lives in the
+        module constant."""
+        monkeypatch.setattr(image_prep, "_DROP_FILE_LIMIT", 5)
+        for i in range(20):
+            (tmp_path / f"f{i:02d}.img").write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        assert len(found) == 5
+
+    def test_dir_scan_cap_picks_lex_smallest_deterministically(
+        self, tmp_path, monkeypatch
+    ):
+        """When a directory has more entries than _DROP_DIR_SCAN_CAP,
+        heapq.nsmallest retains the lex-smallest subset — deterministic
+        across filesystems where os.scandir order isn't specified."""
+        monkeypatch.setattr(image_prep, "_DROP_DIR_SCAN_CAP", 4)
+        monkeypatch.setattr(image_prep, "_DROP_FILE_LIMIT", 100)
+        # 6 names, cap 4 → expect the 4 lex-smallest by name
+        for name in ("z.img", "y.img", "a.img", "m.img", "c.img", "b.img"):
+            (tmp_path / name).write_bytes(b"")
+        found = image_prep.walk_floppy_images(tmp_path)
+        names = sorted(Path(p).name for p in found)
+        assert names == ["a.img", "b.img", "c.img", "m.img"]
+
+
+class TestNormalizeForDedup:
+    """normalize_for_dedup makes textually-different but
+    semantically-equal paths compare equal so dedup catches them."""
+
+    def test_idempotent(self):
+        once = image_prep.normalize_for_dedup("/foo/bar.img")
+        assert image_prep.normalize_for_dedup(once) == once
+
+    def test_collapses_dotdot(self):
+        norm = image_prep.normalize_for_dedup("/foo/bar/../baz.img")
+        assert ".." not in norm
+        assert norm.endswith("baz.img")
+
+    def test_separator_normalization(self):
+        """Forward slashes (QUrl.toLocalFile on Windows) compare equal
+        to native separators after normalization."""
+        import os as _os
+        # On POSIX, os.path.normpath leaves "/" alone (it's the native
+        # separator). On Windows it converts "/" → "\\". Either way
+        # the two normalized forms must match.
+        a = image_prep.normalize_for_dedup("/foo/bar/boot.img")
+        b = image_prep.normalize_for_dedup(_os.sep.join(["", "foo", "bar", "boot.img"]))
+        assert a == b
+
+
 # ── Test fixtures ───────────────────────────────────────────────────────────
 
 INNER_BYTES = b"\x55\xaa" + b"FAKE BPB DATA " * 200  # ~2.7 KB of fake floppy
