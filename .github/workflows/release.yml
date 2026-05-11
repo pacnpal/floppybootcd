@@ -913,6 +913,28 @@ jobs:
             exit 1
           fi
 
+          # Validate that x86_64 contains no Mach-O files absent from arm64.
+          # The merge loop above only walks arm64; any extra Mach-O in x86_64
+          # would be silently omitted from the universal bundle.
+          x86_only=0
+          while IFS= read -r -d '' x86_file; do
+            rel="${x86_file#${X86_64_APP}/}"
+            arm64_counterpart="${ARM64_APP}/${rel}"
+            if ! file -b "$x86_file" 2>/dev/null | grep -q "Mach-O"; then
+              continue
+            fi
+            if [ ! -f "$arm64_counterpart" ]; then
+              echo "ERROR: Mach-O present in x86_64 but absent from arm64 (omitted from universal bundle): $rel"
+              x86_only=$((x86_only + 1))
+            fi
+          done < <(find "$X86_64_APP" -not -type d -not -type l -print0)
+
+          if [ "$x86_only" -gt 0 ]; then
+            echo ""
+            echo "ERROR: $x86_only Mach-O file(s) exist only in the x86_64 bundle and would be missing from the universal2 bundle."
+            exit 1
+          fi
+
           # Re-apply ad-hoc signatures. lipo invalidates the existing
           # per-arch code signatures left by PyInstaller. --deep re-signs
           # every nested Mach-O binary with the ad-hoc identity (-), which
@@ -970,14 +992,26 @@ jobs:
             fi
           done
 
-          # Full arch report for every Mach-O in the bundle.
+          # Full arch check for every Mach-O in the bundle.
           # Use NUL-delimited find+sort to handle paths with spaces.
+          # This catches any nested Mach-O (dylibs, helpers, etc.) that may
+          # have been skipped or left single-arch during the merge step.
           echo ""
-          echo "--- Arch breakdown (all Mach-O files) ---"
+          echo "--- Arch check (all Mach-O files) ---"
           while IFS= read -r -d '' f; do
-            if file -b "$f" 2>/dev/null | grep -q "Mach-O"; then
-              lipo -info "$f" 2>/dev/null | tr '\n' ' '
-              echo "  ← ${f#${UNIVERSAL_APP}/}"
+            if ! file -b "$f" 2>/dev/null | grep -q "Mach-O"; then
+              continue
+            fi
+            info=$(lipo -info "$f" 2>/dev/null || true)
+            rel="${f#${UNIVERSAL_APP}/}"
+            printf '%s  ← %s\n' "$info" "$rel"
+            if ! echo "$info" | grep -q "x86_64"; then
+              echo "ERROR: missing x86_64 slice in $rel"
+              errors=$((errors + 1))
+            fi
+            if ! echo "$info" | grep -q "arm64"; then
+              echo "ERROR: missing arm64 slice in $rel"
+              errors=$((errors + 1))
             fi
           done < <(find "$UNIVERSAL_APP" -not -type d -not -type l -print0 | sort -z)
 
@@ -987,7 +1021,7 @@ jobs:
             exit 1
           fi
           echo ""
-          echo "All checked binaries are universal2. ✓"
+          echo "All Mach-O binaries in the bundle are universal2. ✓"
 
       - name: Package universal2 build
         shell: bash
