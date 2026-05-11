@@ -188,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     if first == "help":
         args = ["--help"]
-    if first == "gui":
+    elif first == "gui":
         dash_index = next(
             (i for i, value in enumerate(args[1:], start=1) if value.startswith("-") and value != "--"),
             -1,
