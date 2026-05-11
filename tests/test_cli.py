@@ -81,7 +81,7 @@ def test_gui_subcommand_does_not_duplicate_existing_separator(monkeypatch):
     assert seen["args"] == ["regular.fbcd", "--", "-project.fbcd"]
 
 
-def test_gui_subcommand_help_still_uses_argparse_help(monkeypatch, capsys):
+def test_gui_subcommand_dash_help_still_uses_argparse_help(monkeypatch, capsys):
     called = False
 
     def fake_launch_gui(_args: list[str]) -> int:
@@ -91,6 +91,22 @@ def test_gui_subcommand_help_still_uses_argparse_help(monkeypatch, capsys):
 
     monkeypatch.setattr(cli, "_launch_gui", fake_launch_gui)
     rc = cli.main(["gui", "-h"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert called is False
+    assert "usage: floppybootcd gui" in out
+
+
+def test_gui_subcommand_long_help_still_uses_argparse_help(monkeypatch, capsys):
+    called = False
+
+    def fake_launch_gui(_args: list[str]) -> int:
+        nonlocal called
+        called = True
+        return 99
+
+    monkeypatch.setattr(cli, "_launch_gui", fake_launch_gui)
+    rc = cli.main(["gui", "--help"])
     out = capsys.readouterr().out
     assert rc == 0
     assert called is False
