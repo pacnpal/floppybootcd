@@ -202,8 +202,11 @@ def main(argv: list[str] | None = None) -> int:
         return _launch_gui([])
     if ns.command == "gui":
         gui_paths = list(getattr(ns, "paths", []))
-        dash_index = next((i for i, path in enumerate(gui_paths) if path.startswith("-")), -1)
-        if dash_index >= 0:
+        dash_index = next(
+            (i for i, path in enumerate(gui_paths) if path.startswith("-") and path != "--"),
+            -1,
+        )
+        if dash_index >= 0 and (dash_index == 0 or gui_paths[dash_index - 1] != "--"):
             gui_paths = [*gui_paths[:dash_index], "--", *gui_paths[dash_index:]]
         return _launch_gui(gui_paths)
     if ns.command == "validate":
