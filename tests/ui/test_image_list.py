@@ -240,10 +240,16 @@ class TestEnterKeyEditsSelection:
 
 class TestExistingPaths:
     def test_existing_paths_set(self, widget, tmp_path):
+        # _existing_paths() returns dedup-normalized keys (case- and
+        # separator-folded) so paths from QUrl.toLocalFile() with
+        # forward slashes and paths from pathlib with native
+        # separators compare equal. Membership check needs to use
+        # the same normalization the widget applies internally.
+        from floppybootcd.core.image_prep import normalize_for_dedup
         f = tmp_path / "a.img"
         f.write_bytes(b"x")
         widget.add_image(FloppyImage(path=str(f)))
-        assert str(f) in widget._existing_paths()
+        assert normalize_for_dedup(str(f)) in widget._existing_paths()
 
     def test_existing_paths_empty_for_empty_widget(self, widget):
         assert widget._existing_paths() == set()
