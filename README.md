@@ -734,7 +734,8 @@ floppybootcd build my-collection.fbcd ./dist/my-collection.iso
 
 - `0`: success
 - `1`: command failure (for example load/build error)
-- `2`: validation failed (`validate` command found project problems)
+- `2`: validation failed (`validate` command found project problems) **or**
+  CLI usage/argument error reported by argparse
 
 ---
 

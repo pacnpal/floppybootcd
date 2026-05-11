@@ -164,7 +164,7 @@ def _run_build(path: str, output: str, xorriso: str, keep_staging: bool) -> int:
 
     try:
         result: BuildResult = build_iso(project, options, progress=_progress, log=print)
-    except RuntimeError as exc:
+    except Exception as exc:
         print(str(exc), file=sys.stderr)
         return 1
     print(f"ISO created: {result.iso_path}")
@@ -179,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
         return _launch_gui(args)
 
     first = args[0]
+    if first == "--":
+        return _launch_gui(args)
     should_parse = first in _COMMANDS or first.startswith("-")
     if not should_parse:
         return _launch_gui(args)

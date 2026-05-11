@@ -29,6 +29,26 @@ def test_main_help_alias_returns_zero_and_prints_usage(capsys):
     assert "usage: floppybootcd" in out
 
 
+def test_main_double_dash_forwards_to_gui(monkeypatch):
+    seen: dict[str, list[str]] = {}
+
+    def fake_launch(args: list[str]) -> int:
+        seen["args"] = list(args)
+        return 9
+
+    monkeypatch.setattr(cli, "_launch_gui", fake_launch)
+    rc = cli.main(["--", "./-project.fbcd"])
+    assert rc == 9
+    assert seen["args"] == ["--", "./-project.fbcd"]
+
+
+def test_main_parse_error_returns_two(capsys):
+    rc = cli.main(["validate"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "the following arguments are required: project" in err
+
+
 def test_validate_command_reports_problems(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_load_project", lambda _: Project())
     monkeypatch.setattr(cli, "validate_project", lambda _: ["No floppy images added."])
@@ -103,3 +123,18 @@ def test_build_command_invokes_builder(monkeypatch, capsys, tmp_path):
     assert calls["xorriso"] == "/usr/bin/xorriso"
     assert calls["keep_staging"] is True
     assert "ISO created:" in out
+
+
+def test_build_command_handles_non_runtime_errors(monkeypatch, capsys):
+    project = Project(title="Build me")
+    monkeypatch.setattr(cli, "_load_project", lambda _: project)
+    monkeypatch.setattr(cli, "load_plugins", lambda: None)
+
+    def boom(*_args, **_kwargs):
+        raise ValueError("bad image format")
+
+    monkeypatch.setattr(cli, "build_iso", boom)
+    rc = cli.main(["build", "demo.fbcd", "out.iso"])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "bad image format" in err
