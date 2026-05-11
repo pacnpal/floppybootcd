@@ -23,7 +23,7 @@ def test_resolve_input_paths_project_wins(tmp_path):
     assert images == []
 
 
-def test_resolve_input_paths_collects_and_dedups_images(tmp_path):
+def test_resolve_input_paths_collects_and_deduplicates_images(tmp_path):
     disk1 = tmp_path / "a.img"
     disk1.write_bytes(b"x")
     disk2 = tmp_path / "b.ima"

@@ -47,8 +47,9 @@ def resolve_input_paths(paths: Sequence[str]) -> tuple[str | None, list[str]]:
     """Resolve startup paths into either a project load or image-add batch.
 
     If any .fbcd path appears, only the first one is returned (project-wins
-    semantics). Otherwise, all discovered floppy image paths are returned,
-    deduplicated in left-to-right order.
+    semantics), and any subsequent .fbcd paths in the same batch are ignored.
+    Otherwise, all discovered floppy image paths are returned, deduplicated
+    in left-to-right order.
     """
     canonical = [_canonicalize(p) for p in paths]
     for cp in canonical:
@@ -328,8 +329,8 @@ class ClassicMainWindow:
 def _require_tk() -> None:
     if tk is None or filedialog is None or messagebox is None:
         raise RuntimeError(
-            "Tkinter is not available in this Python build. Install your distro's "
-            "python3-tk package (or equivalent), or use the Qt frontend."
+            "Tkinter is not available in this Python build. Ensure your Python "
+            "installation includes Tk support, or use the Qt frontend."
         )
 
 
