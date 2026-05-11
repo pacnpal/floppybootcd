@@ -358,7 +358,7 @@ class MainWindow(QMainWindow):
         if path:
             self.open_project_path(path)
 
-    def open_project_path(self, path: str) -> None:
+    def open_project_path(self, path: str) -> bool:
         """Load *path* as the current project.
 
         Public so drag-and-drop on the window, the OS file-association
@@ -379,9 +379,15 @@ class MainWindow(QMainWindow):
         new project but widgets showing the old one, an internally
         inconsistent state where File → Save would write the new
         project to the new path while the user stared at old data.
+
+        Returns:
+            ``True`` if the project was successfully loaded;
+            ``False`` if the user cancelled the unsaved-changes prompt
+            or if loading / reloading failed (in which case an error
+            dialog has already been shown).
         """
         if not self._maybe_save():
-            return
+            return False
 
         # Snapshot before any swap so a failure can fully roll back.
         prev_project = self.project
@@ -392,6 +398,7 @@ class MainWindow(QMainWindow):
             self.project_path = Path(path)
             self._dirty = False
             self._reload_from_project()
+            return True
         except Exception as e:
             # Atomic rollback. _reload_from_project may have partially
             # populated some widgets before raising; re-running it
@@ -417,7 +424,11 @@ class MainWindow(QMainWindow):
                 pass
             self._dirty = prev_dirty
             self._update_title()
-            QMessageBox.critical(self, "Open failed", str(e))
+            QMessageBox.critical(
+                self, "Open failed",
+                f"{path}\n\n{e}",
+            )
+            return False
 
     def _save_project(self) -> bool:
         if not self.project_path:
@@ -850,8 +861,14 @@ class MainWindow(QMainWindow):
             e.mimeData().urls(), existing_paths,
         )
         if project_path:
-            self.open_project_path(project_path)
-            e.acceptProposedAction()
+            if self.open_project_path(project_path):
+                e.acceptProposedAction()
+            else:
+                # User cancelled the unsaved-changes prompt, or the
+                # load failed (error dialog already shown). The drag
+                # was entered with acceptProposedAction(), so we must
+                # explicitly ignore here to signal "nothing changed".
+                e.ignore()
             return
         if floppy_paths:
             self._add_paths(floppy_paths)

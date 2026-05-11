@@ -349,6 +349,45 @@ class TestOpenProjectPath:
             "window now would skip the unsaved-changes prompt"
         )
 
+    def test_open_project_path_returns_true_on_success(self, win, tmp_path):
+        """open_project_path() returns True when the project is loaded."""
+        p = Project(title="OK", images=[])
+        out = tmp_path / "ok.fbcd"
+        p.save(out)
+        assert win.open_project_path(str(out)) is True
+
+    def test_open_project_path_returns_false_on_cancel(self, win, tmp_path, monkeypatch):
+        """open_project_path() returns False when the user cancels the
+        unsaved-changes prompt."""
+        monkeypatch.setattr(win, "_maybe_save", lambda: False)
+        p = Project(title="Never", images=[])
+        out = tmp_path / "never.fbcd"
+        p.save(out)
+        assert win.open_project_path(str(out)) is False
+
+    def test_open_project_path_returns_false_on_error(self, win, tmp_path, monkeypatch):
+        """open_project_path() returns False when loading fails."""
+        import floppybootcd.ui.main_window as mw_mod
+        monkeypatch.setattr(mw_mod.QMessageBox, "critical", lambda *a: None)
+        assert win.open_project_path(str(tmp_path / "no-such.fbcd")) is False
+
+    def test_open_project_path_error_message_includes_path(self, win, tmp_path, monkeypatch):
+        """The 'Open failed' dialog message includes the path so users can
+        identify which file caused the problem."""
+        seen = {}
+        def fake_critical(parent, title, message):
+            seen["message"] = message
+
+        import floppybootcd.ui.main_window as mw_mod
+        monkeypatch.setattr(mw_mod.QMessageBox, "critical", fake_critical)
+
+        target = str(tmp_path / "does-not-exist.fbcd")
+        win.open_project_path(target)
+
+        assert target in seen.get("message", ""), (
+            "error dialog message should include the path that failed to open"
+        )
+
 
 class TestReloadDoesNotMarkDirty:
     """Regression: programmatic widget setters in _reload_from_project()
