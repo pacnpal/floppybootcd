@@ -3,7 +3,7 @@ from __future__ import annotations
 from floppybootcd.classic_app import _parse_cli_paths, resolve_input_paths
 
 
-def test_parse_cli_paths_filters_flags_like_qt_variant():
+def test_parse_cli_paths_filters_macos_psn_flags():
     assert _parse_cli_paths(["-psn_0_1", "disk.img"]) == ["disk.img"]
 
 

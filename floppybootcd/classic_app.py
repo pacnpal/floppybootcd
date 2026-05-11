@@ -23,6 +23,8 @@ except ModuleNotFoundError:  # pragma: no cover - platform packaging issue
     filedialog = None
     messagebox = None
 
+TK_AVAILABLE = tk is not None
+
 
 def _canonicalize(path: str | Path) -> str:
     return str(Path(path).expanduser().resolve(strict=False))
@@ -327,7 +329,7 @@ class ClassicMainWindow:
 
 
 def _require_tk() -> None:
-    if tk is None or filedialog is None or messagebox is None:
+    if not TK_AVAILABLE:
         raise RuntimeError(
             "Tkinter is not available in this Python build. Ensure your Python "
             "installation includes Tk support, or use the Qt frontend."
