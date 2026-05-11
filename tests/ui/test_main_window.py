@@ -64,6 +64,34 @@ class TestMainWindowAddPaths:
         win._add_paths([str(f)])
         assert win.project.images[0].default is True
 
+    def test_add_paths_dedup_normalizes_separators(self, win, tmp_path):
+        """A path arriving with forward slashes (QUrl.toLocalFile()
+        on Windows) and the same path with native separators must
+        dedup against each other — _add_paths goes through
+        normalize_for_dedup like the drop handlers."""
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        # Native form (whatever the OS uses)
+        win._add_paths([str(f)])
+        assert len(win.project.images) == 1
+        # Same file, alternate separator scheme. POSIX: identical
+        # (forward slashes are native); Windows: forward-slash form
+        # of the same absolute path. Either way normalize_for_dedup
+        # must match against the existing entry.
+        forward_form = str(f).replace("\\", "/")
+        win._add_paths([forward_form])
+        assert len(win.project.images) == 1, (
+            "duplicate slipped past normalize_for_dedup"
+        )
+
+    def test_add_paths_within_call_dedup(self, win, tmp_path):
+        """A single _add_paths call with the same path twice (in
+        different forms) only adds it once."""
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        win._add_paths([str(f), str(f), str(f).replace("\\", "/")])
+        assert len(win.project.images) == 1
+
 
 class TestSetDefault:
     def test_set_default_makes_others_non_default(self, win, qtbot, tmp_path):

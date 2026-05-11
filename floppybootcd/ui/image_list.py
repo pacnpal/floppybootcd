@@ -151,14 +151,29 @@ class ImageListWidget(QListWidget):
         return False
 
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:
-        if self.mime_is_acceptable(e.mimeData()):
+        mime = e.mimeData()
+        if self.mime_is_acceptable(mime):
             e.acceptProposedAction()
+        elif mime.hasUrls():
+            # URL-based drag we explicitly don't want (unknown
+            # extension, all duplicates, .txt). Without an explicit
+            # ignore() the QListWidget base class — with
+            # setAcceptDrops(True) and DragDropMode.DragDrop on —
+            # may still accept it as a candidate model item, which
+            # would re-show the misleading "accept" cursor for a
+            # drop we'd silently no-op.
+            e.ignore()
         else:
+            # Internal drag (item reorder); the base class knows
+            # what to do.
             super().dragEnterEvent(e)
 
     def dragMoveEvent(self, e: QDragMoveEvent) -> None:
-        if self.mime_is_acceptable(e.mimeData()):
+        mime = e.mimeData()
+        if self.mime_is_acceptable(mime):
             e.acceptProposedAction()
+        elif mime.hasUrls():
+            e.ignore()
         else:
             super().dragMoveEvent(e)
 

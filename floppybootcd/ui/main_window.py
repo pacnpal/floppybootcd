@@ -479,10 +479,20 @@ class MainWindow(QMainWindow):
             self._add_paths(paths)
 
     def _add_paths(self, paths: list[str]) -> None:
-        existing = {i.path for i in self.project.images}
+        # Dedup against the current project using the same normalized
+        # form the drop handlers and hover gate use, so a path
+        # arriving via CLI / QFileOpenEvent in one casing or
+        # separator scheme can't slip past dedup against an
+        # equivalent path stored from another source. The stored
+        # FloppyImage.path keeps the user's original form for
+        # display; normalization is for comparison only. See
+        # image_prep.normalize_for_dedup for the rationale.
+        from ..core.image_prep import normalize_for_dedup
+        existing = {normalize_for_dedup(i.path) for i in self.project.images}
         for p in paths:
-            if p in existing:
+            if normalize_for_dedup(p) in existing:
                 continue
+            existing.add(normalize_for_dedup(p))  # within-call dedup too
             img = FloppyImage(path=p, label=Path(p).stem)
             self.project.images.append(img)
             self.list_widget.add_image(img)

@@ -216,6 +216,60 @@ class TestMimeIsAcceptable:
         assert widget.mime_is_acceptable(self._mime_with([f])) is False
 
 
+class TestDragEnterExplicitIgnore:
+    """dragEnterEvent / dragMoveEvent must call e.ignore() (not fall
+    through to QListWidget's super) for URL-based drags that
+    mime_is_acceptable rejects. Without that explicit ignore, the
+    base class — with setAcceptDrops(True) + DragDropMode.DragDrop
+    — could re-accept the drag and reintroduce the misleading
+    'accept' cursor for unknown extensions / all-duplicate drags."""
+
+    def _make_drag_enter(self, mime):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QDragEnterEvent
+        return QDragEnterEvent(
+            QPoint(0, 0),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+
+    def _mime_with(self, paths):
+        from PySide6.QtCore import QMimeData, QUrl
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+        return mime
+
+    def test_unrecognized_url_is_ignored(self, widget, tmp_path):
+        """Dragging a .txt URL onto the list must produce ignore(),
+        not the cursor's 'accept' state."""
+        f = tmp_path / "readme.txt"
+        f.write_bytes(b"x")
+        ev = self._make_drag_enter(self._mime_with([f]))
+        widget.dragEnterEvent(ev)
+        assert ev.isAccepted() is False
+
+    def test_accepted_url_sets_accepted(self, widget, tmp_path):
+        """Sanity counter-test: a recognized image URL DOES end up
+        accepted."""
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        ev = self._make_drag_enter(self._mime_with([f]))
+        widget.dragEnterEvent(ev)
+        assert ev.isAccepted() is True
+
+    def test_all_duplicate_url_is_ignored(self, widget, tmp_path):
+        """A drag of a file already present in the list must be
+        ignored (no misleading accept cursor for a no-op drop)."""
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        widget.add_image(FloppyImage(path=str(f)))
+        ev = self._make_drag_enter(self._mime_with([f]))
+        widget.dragEnterEvent(ev)
+        assert ev.isAccepted() is False
+
+
 class TestEnterKeyEditsSelection:
     def test_enter_emits_edit_requested(self, widget, tmp_path, qtbot):
         from PySide6.QtCore import Qt as QtConst
