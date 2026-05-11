@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from floppybootcd import cli
-from floppybootcd.core.iso_builder import BuildResult
+from floppybootcd.core.iso_builder import BuildOptions, BuildResult
 from floppybootcd.core.project import FloppyImage, Project
 
 
@@ -64,11 +65,18 @@ def test_build_command_invokes_builder(monkeypatch, capsys, tmp_path):
     def fake_plugins() -> None:
         calls["plugins"] = True
 
-    def fake_build(project_arg, options, progress, log) -> BuildResult:
-        calls["project"] = project_arg
+    def fake_build(
+        project: Project,
+        options: BuildOptions,
+        progress: Any = None,
+        log: Any = None,
+    ) -> BuildResult:
+        calls["project"] = project
         calls["output_path"] = options.output_path
         calls["xorriso"] = options.xorriso_override
         calls["keep_staging"] = options.keep_staging
+        assert progress is not None
+        assert log is not None
         progress("Build complete.", 1.0)
         log("builder-log")
         return BuildResult(iso_path=options.output_path, staging_path=Path("/tmp/stage"))

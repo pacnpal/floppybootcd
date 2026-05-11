@@ -156,6 +156,7 @@ def _run_build(path: str, output: str, xorriso: str, keep_staging: bool) -> int:
     )
 
     def _progress(msg: str, percent: float) -> None:
+        # iso_builder uses negative values when no numeric percentage is available.
         if percent < 0:
             print(msg)
         else:
@@ -189,7 +190,11 @@ def main(argv: list[str] | None = None) -> int:
         ns = parser.parse_args(args)
     except SystemExit as exc:
         code = exc.code
-        return int(code) if isinstance(code, int) else 1
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        return 1
 
     if ns.command in (None, "gui"):
         return _launch_gui(getattr(ns, "paths", []))
