@@ -929,9 +929,29 @@ jobs:
           UNIVERSAL_APP="work/universal/floppybootcd.app"
           errors=0
 
-          # Confirm the two most important Mach-O binaries carry both slices.
+          # Required Mach-O binaries: absence is a hard failure.
           for candidate in \
-              "Contents/MacOS/floppybootcd" \
+              "Contents/MacOS/floppybootcd"; do
+            f="${UNIVERSAL_APP}/${candidate}"
+            if [ ! -f "$f" ]; then
+              echo "ERROR: required binary not found: $candidate"
+              errors=$((errors + 1))
+              continue
+            fi
+            info=$(lipo -info "$f")
+            echo "$info"
+            if ! echo "$info" | grep -q "x86_64"; then
+              echo "ERROR: missing x86_64 slice in $candidate"
+              errors=$((errors + 1))
+            fi
+            if ! echo "$info" | grep -q "arm64"; then
+              echo "ERROR: missing arm64 slice in $candidate"
+              errors=$((errors + 1))
+            fi
+          done
+
+          # Optional Mach-O binaries: absence is reported but not fatal.
+          for candidate in \
               "Contents/Resources/bin/xorriso"; do
             f="${UNIVERSAL_APP}/${candidate}"
             if [ ! -f "$f" ]; then
