@@ -27,11 +27,14 @@ def parse_dropped_urls(
     :meth:`MainWindow.dropEvent` so the drop semantics stay
     consistent between the two drop targets:
 
-    * **Project wins:** if any URL is a ``.fbcd`` file, return it as
+    * **Project wins:** if any URL has a ``.fbcd`` suffix, return it as
       ``project_path`` and an empty image list (project replacement
-      makes any image drops moot). Pre-scan in one cheap pass so we
-      don't waste UI-thread time recursing a 100k-entry folder whose
-      result we'd then throw away.
+      makes any image drops moot). Matched by suffix alone — consistent
+      with the CLI / QFileOpenEvent dispatcher — so that non-existent
+      paths, broken symlinks, and directories named ``*.fbcd`` are all
+      forwarded to ``open_project_path()`` which surfaces the error.
+      Pre-scan in one cheap pass so we don't waste UI-thread time
+      recursing a 100k-entry folder whose result we'd then throw away.
     * **Otherwise:** walk every URL via :func:`walk_floppy_images`
       (recurses folders, filters by extension), dedup against
       *existing_paths* using :func:`normalize_for_dedup` so paths
@@ -51,7 +54,11 @@ def parse_dropped_urls(
         if not u.isLocalFile():
             continue
         p = Path(u.toLocalFile())
-        if p.is_file() and p.suffix.lower() == PROJECT_EXT:
+        # Route by suffix alone — consistent with the CLI / QFileOpenEvent
+        # dispatcher's suffix-only routing. Let open_project_path() surface
+        # the error for paths that don't exist or aren't regular files (e.g.
+        # broken symlinks, directories named *.fbcd).
+        if p.suffix.lower() == PROJECT_EXT:
             return str(p), []
 
     existing_norm = {normalize_for_dedup(p) for p in existing_paths}
@@ -140,11 +147,15 @@ class ImageListWidget(QListWidget):
             p = Path(u.toLocalFile())
             if p.is_dir():
                 return True
-            if not p.is_file():
-                continue
+            # Check PROJECT_EXT by suffix *before* the is_file() gate so
+            # that broken symlinks / directories named *.fbcd also accept
+            # the hover cursor and route to open_project_path() on drop —
+            # consistent with parse_dropped_urls() and the CLI dispatcher.
             ext = p.suffix.lower()
             if ext == PROJECT_EXT:
                 return True
+            if not p.is_file():
+                continue
             if (ext in ALL_ACCEPTED_EXTS
                     and normalize_for_dedup(p) not in existing):
                 return True

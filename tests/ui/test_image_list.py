@@ -163,6 +163,44 @@ class TestDropEventAccepts:
         assert emitted == []
 
 
+class TestParseDroppedUrls:
+    """Tests for the parse_dropped_urls() helper that underpins
+    both the list-widget and window-level drop semantics."""
+
+    def _urls_from(self, paths):
+        from PySide6.QtCore import QUrl
+        return [QUrl.fromLocalFile(str(p)) for p in paths]
+
+    def test_nonexistent_fbcd_routes_as_project(self, tmp_path):
+        """A .fbcd path that doesn't exist on disk must still be returned
+        as a project path so open_project_path() can surface the error.
+        Previously is_file() was tested first, causing a silent no-op."""
+        from floppybootcd.ui.image_list import parse_dropped_urls
+        p = tmp_path / "missing.fbcd"  # deliberately not created
+        project_path, image_paths = parse_dropped_urls(self._urls_from([p]), [])
+        assert project_path == str(p)
+        assert image_paths == []
+
+    def test_existing_fbcd_routes_as_project(self, tmp_path):
+        """An existing .fbcd file is correctly identified as a project."""
+        from floppybootcd.ui.image_list import parse_dropped_urls
+        p = tmp_path / "real.fbcd"
+        p.write_bytes(b"{}")
+        project_path, image_paths = parse_dropped_urls(self._urls_from([p]), [])
+        assert project_path == str(p)
+        assert image_paths == []
+
+    def test_image_file_routes_as_image(self, tmp_path):
+        """A .img file is not a project and routes to image_paths."""
+        from floppybootcd.ui.image_list import parse_dropped_urls
+        f = tmp_path / "boot.img"
+        f.write_bytes(b"x")
+        project_path, image_paths = parse_dropped_urls(self._urls_from([f]), [])
+        assert project_path is None
+        assert len(image_paths) == 1
+        assert image_paths[0] == str(f)
+
+
 class TestMimeIsAcceptable:
     """The hover gate decides whether the cursor shows the OS
     'accept' icon. It needs to reject drags that drop into a no-op
@@ -208,6 +246,14 @@ class TestMimeIsAcceptable:
     def test_accepts_fbcd_project_drop(self, widget, tmp_path):
         p = tmp_path / "project.fbcd"
         p.write_bytes(b"{}")
+        assert widget.mime_is_acceptable(self._mime_with([p])) is True
+
+    def test_accepts_nonexistent_fbcd_by_suffix(self, widget, tmp_path):
+        """A .fbcd path that doesn't exist on disk (broken symlink / bad
+        shortcut) must still be accepted by the hover gate so it routes
+        to open_project_path() which shows the 'Open failed' dialog.
+        Previously is_file() was checked first, which caused a silent no-op."""
+        p = tmp_path / "missing.fbcd"  # deliberately not created
         assert widget.mime_is_acceptable(self._mime_with([p])) is True
 
     def test_rejects_unknown_extension(self, widget, tmp_path):
