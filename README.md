@@ -906,9 +906,13 @@ disc is left in the drive so you can examine it.
 
 ## File associations
 
-Each OS-native package format registers `.fbcd` as a FloppyBootCD
-document type. Double-click a `.fbcd` file in your file manager and it
-opens FloppyBootCD with that project loaded.
+Each OS-native package format handles `.fbcd` file associations, but
+the mechanism differs by platform. On **macOS** and **Linux** (`.deb`
+/ `.rpm`) the association is **automatic** — double-clicking a `.fbcd`
+file in your file manager opens FloppyBootCD with that project loaded
+right after install. On **Windows** (`.zip` bundle) the association is
+**opt-in** and requires running the included `register-fbcd-windows.bat`
+once after extracting the archive. See each platform's section below.
 
 ### macOS (`.app` bundle)
 

@@ -183,6 +183,32 @@ def _macos_setup(app: QApplication) -> None:
     app.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeMenuBar, False)
 
 
+def _parse_cli_paths(argv: list[str]) -> list[str]:
+    """Filter raw ``sys.argv[1:]`` down to the paths to dispatch.
+
+    ``--`` acts as a POSIX end-of-options terminator: everything after
+    it is treated as a path, even if the name begins with ``-`` (e.g.
+    ``floppybootcd -- ./-project.fbcd``). Before ``--``, empty strings
+    and flag-like args (those starting with ``-``) are filtered out —
+    without the empty-string guard ``floppybootcd ""`` would resolve
+    ``""`` to CWD and recurse the working directory.
+
+    Args:
+        argv: raw argument list, typically ``sys.argv[1:]``.
+
+    Returns:
+        List of path strings to hand to ``_dispatch_batch``.
+    """
+    if "--" in argv:
+        sep = argv.index("--")
+        explicit = argv[sep + 1:]
+        flags_region = argv[:sep]
+    else:
+        explicit = []
+        flags_region = argv
+    return explicit + [a for a in flags_region if a and not a.startswith("-")]
+
+
 def main() -> int:
     # HiDPI: Qt 6 enables this automatically, but be explicit for older 6.x
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -211,17 +237,9 @@ def main() -> int:
     # _dispatch_batch. Covers Windows file double-click (which
     # spawns floppybootcd.exe <path>), Linux xdg-open (likewise),
     # and shell invocations like `floppybootcd ~/project.fbcd`.
-    # _dispatch (called from the batch) canonicalizes its input
-    # (expanduser + resolve) and silently no-ops for paths that
-    # don't exist or aren't a recognized floppy image / folder /
-    # .fbcd, so we DON'T pre-check existence here — pre-checking
-    # with a literal "~/foo" would skip dispatch for shell-quoted
-    # paths whose tilde the OS hasn't expanded yet (PowerShell,
-    # cmd.exe with delayed expansion, etc.). The empty-string and
-    # Qt-flag guards stay; without them `floppybootcd ""` would
-    # Path("").exists() == True (resolves to CWD) and recurse the
-    # working directory.
-    cli_paths = [a for a in sys.argv[1:] if a and not a.startswith("-")]
+    # See _parse_cli_paths for the filtering rules (empty-string
+    # guard, `-` flag filter, and `--` end-of-options support).
+    cli_paths = _parse_cli_paths(sys.argv[1:])
     if cli_paths:
         app._dispatch_batch(cli_paths)
 

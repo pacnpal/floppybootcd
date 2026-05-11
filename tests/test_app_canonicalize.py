@@ -1,4 +1,4 @@
-"""Tests for FloppyBootCDApplication._canonicalize().
+"""Tests for FloppyBootCDApplication._canonicalize() and _parse_cli_paths().
 
 Lives at the test root (not under tests/ui/) because it's a pure
 function test that doesn't need QApplication / qtbot — calling the
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from floppybootcd.app import FloppyBootCDApplication
+from floppybootcd.app import FloppyBootCDApplication, _parse_cli_paths
 
 
 canon = FloppyBootCDApplication._canonicalize
@@ -210,3 +210,55 @@ class TestDispatchCanonical:
         stub._dispatch_canonical(str(proj))
         assert opened == [str(proj)]
         assert added == []
+
+
+class TestParseCliPaths:
+    """_parse_cli_paths filters sys.argv[1:] into the list of paths to
+    dispatch. Key rules:
+      - Empty strings are dropped (Path("") resolves to CWD).
+      - Args starting with '-' before '--' are treated as flags and dropped.
+        Note: Qt strips its own paired flags (e.g. -platform xcb) from
+        sys.argv during QApplication.__init__, so in practice only
+        unpaired OS-injected flags (like macOS's -psn_*) remain.
+      - '--' is the POSIX end-of-options terminator: everything after it
+        is treated as a path, even if it starts with '-'.
+    """
+
+    def test_normal_paths_pass_through(self):
+        assert _parse_cli_paths(["/tmp/a.img", "/tmp/b.fbcd"]) == [
+            "/tmp/a.img",
+            "/tmp/b.fbcd",
+        ]
+
+    def test_empty_string_filtered_out(self):
+        assert _parse_cli_paths([""]) == []
+
+    def test_dash_prefixed_flags_filtered_out(self):
+        # Only the flag itself ('-psn_*') is filtered; Qt removes paired
+        # flags like '-platform xcb' itself before main() runs.
+        assert _parse_cli_paths(["-psn_0_12345", "/tmp/a.img"]) == ["/tmp/a.img"]
+
+    def test_dash_dash_separator_paths_pass_through(self):
+        # Paths starting with '-' can be passed after '--'.
+        assert _parse_cli_paths(["--", "./-project.fbcd"]) == ["./-project.fbcd"]
+
+    def test_flags_before_separator_filtered_paths_after(self):
+        # '-psn_*' before '--' is filtered; '-dash.img' after '--' passes through.
+        result = _parse_cli_paths(["-psn_0_1", "--", "-dash.img", "boot.img"])
+        assert result == ["-dash.img", "boot.img"]
+
+    def test_empty_string_after_separator_kept(self):
+        # After '--' even empty strings are literal paths (unusual but
+        # the caller is responsible for that edge case).
+        result = _parse_cli_paths(["--", ""])
+        assert result == [""]
+
+    def test_no_args_returns_empty(self):
+        assert _parse_cli_paths([]) == []
+
+    def test_only_separator_returns_empty(self):
+        assert _parse_cli_paths(["--"]) == []
+
+    def test_psn_flag_filtered(self):
+        # macOS passes -psn_* to every GUI app; it must not be dispatched.
+        assert _parse_cli_paths(["-psn_0_12345", "/tmp/x.img"]) == ["/tmp/x.img"]
