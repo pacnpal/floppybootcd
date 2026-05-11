@@ -195,6 +195,11 @@ def build(
         # Run xorriso
         progress("Building ISO...", -1.0)
         volid = (project.title or "FLOPPYBOOTCD")[:32]
+        # xorriso's -as mkisofs treats the trailing pathspec as an ISO graft
+        # point and prepends "/" to absolute disk paths during normalization,
+        # which turns Windows paths like "C:\..." into "/C:\..." and fails
+        # with "No such file or directory". Run with cwd set to the staging
+        # root and pass a plain relative name to sidestep that.
         cmd = [
             xorriso,
             "-as", "mkisofs",
@@ -204,12 +209,13 @@ def build(
             "-b", result.boot_image_relpath,
             "-c", result.boot_catalog_relpath,
             *result.extra_xorriso_args,
-            str(iso_root),
+            iso_root.name,
         ]
         log("$ " + " ".join(cmd))
 
         proc = subprocess.Popen(
             cmd,
+            cwd=str(staging_root),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
