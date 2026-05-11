@@ -891,7 +891,7 @@ jobs:
             fi
 
             if [ ! -f "$x86_file" ]; then
-              echo "WARNING: no x86_64 counterpart for $rel — keeping arm64 slice"
+              echo "ERROR: no x86_64 counterpart for Mach-O binary: $rel"
               no_counterpart=$((no_counterpart + 1))
               continue
             fi
@@ -905,6 +905,13 @@ jobs:
           echo "  lipo'd:          $merged"
           echo "  already fat:     $already_fat"
           echo "  no x86 partner:  $no_counterpart"
+
+          if [ "$no_counterpart" -gt 0 ]; then
+            echo ""
+            echo "ERROR: $no_counterpart Mach-O file(s) had no x86_64 counterpart."
+            echo "The universal2 bundle would be incomplete and fail on Intel Macs."
+            exit 1
+          fi
 
           # Re-apply ad-hoc signatures. lipo invalidates the existing
           # per-arch code signatures left by PyInstaller. --deep re-signs
@@ -944,15 +951,15 @@ jobs:
           done
 
           # Full arch report for every Mach-O in the bundle.
+          # Use NUL-delimited find+sort to handle paths with spaces.
           echo ""
           echo "--- Arch breakdown (all Mach-O files) ---"
-          find "$UNIVERSAL_APP" -not -type d -not -type l | sort | \
-          while read -r f; do
+          while IFS= read -r -d '' f; do
             if file -b "$f" 2>/dev/null | grep -q "Mach-O"; then
               lipo -info "$f" 2>/dev/null | tr '\n' ' '
               echo "  ← ${f#${UNIVERSAL_APP}/}"
             fi
-          done
+          done < <(find "$UNIVERSAL_APP" -not -type d -not -type l -print0 | sort -z)
 
           if [ "$errors" -gt 0 ]; then
             echo ""
