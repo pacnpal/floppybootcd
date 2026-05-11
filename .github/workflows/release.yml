@@ -458,15 +458,27 @@ jobs:
           import plistlib, pathlib
           plist = pathlib.Path("dist/floppybootcd.app/Contents/Info.plist")
           info = plistlib.loads(plist.read_bytes())
-          info["CFBundleDocumentTypes"] = [{
+          # Merge our document-type entry into the existing list so we
+          # don't discard any PyInstaller-generated entries. Overwrite
+          # an existing entry whose identifier matches ours; append if
+          # no match is found.
+          our_doc_type = {
               "CFBundleTypeName": "FloppyBootCD Project",
               "CFBundleTypeRole": "Editor",
               "CFBundleTypeExtensions": ["fbcd"],
               "CFBundleTypeIconFile": "icon-windowed.icns",
               "LSHandlerRank": "Owner",
               "LSItemContentTypes": ["com.pacnpal.floppybootcd.project"],
-          }]
-          info["UTExportedTypeDeclarations"] = [{
+          }
+          existing_doc_types = info.get("CFBundleDocumentTypes", [])
+          for i, entry in enumerate(existing_doc_types):
+              if "com.pacnpal.floppybootcd.project" in entry.get("LSItemContentTypes", []):
+                  existing_doc_types[i] = our_doc_type
+                  break
+          else:
+              existing_doc_types.append(our_doc_type)
+          info["CFBundleDocumentTypes"] = existing_doc_types
+          our_uti = {
               "UTTypeIdentifier": "com.pacnpal.floppybootcd.project",
               "UTTypeDescription": "FloppyBootCD Project",
               "UTTypeConformsTo": ["public.data", "public.content"],
@@ -474,7 +486,15 @@ jobs:
                   "public.filename-extension": ["fbcd"],
                   "public.mime-type": ["application/x-floppybootcd-project"],
               },
-          }]
+          }
+          existing_utis = info.get("UTExportedTypeDeclarations", [])
+          for i, entry in enumerate(existing_utis):
+              if entry.get("UTTypeIdentifier") == "com.pacnpal.floppybootcd.project":
+                  existing_utis[i] = our_uti
+                  break
+          else:
+              existing_utis.append(our_uti)
+          info["UTExportedTypeDeclarations"] = existing_utis
           # Set the bundle identifier explicitly so Launch Services keys
           # association entries to a stable ID instead of the per-build
           # PyInstaller default.

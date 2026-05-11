@@ -109,13 +109,16 @@ def walk_floppy_images(path: str | Path) -> list[str]:
         * **Recursion depth ≤ ``_DROP_RECURSION_LIMIT`` levels**
           (currently 5). Anything deeper is silently skipped — a
           misdrop on ``~`` or ``/`` doesn't recurse the whole tree.
-        * **Per-directory enumeration ≤ ``_DROP_DIR_SCAN_CAP``**
-          (currently 8× the file cap). For directories with more
-          entries than this, ``heapq.nsmallest`` keeps only the
-          ``_DROP_DIR_SCAN_CAP`` lex-smallest names. Memory stays
-          bounded and the kept subset is the same on every
-          filesystem (deterministic), but it is **not** the entire
-          directory.
+        * **Per-directory retained subset ≤ ``_DROP_DIR_SCAN_CAP``**
+          (currently 8× the file cap). ``heapq.nsmallest`` fully
+          iterates the underlying ``os.scandir`` stream to find the
+          lex-smallest N entries — so the time spent grows with the
+          number of entries in the directory, not just the cap. For
+          pathological directories (millions of entries) this can
+          still take time. The cap limits only how many entries are
+          *retained* for downstream work and kept in memory; the
+          kept subset is the same on every filesystem
+          (deterministic), but it is **not** the entire directory.
         * **Global result ≤ ``_DROP_FILE_LIMIT`` files**
           (currently 1024). Traversal stops once the cap is hit.
 

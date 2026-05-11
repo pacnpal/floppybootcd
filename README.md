@@ -723,8 +723,10 @@ Four ways:
 - **Drag from Finder/Explorer/Nautilus** onto the window or the image list
 - **Drag a folder** — the app recurses up to five levels deep and picks
   up every floppy image inside (skipping hidden files, `.AppleDouble`,
-  `$RECYCLE.BIN`, etc.). Caps at 1024 files per drop so a wrong-folder
-  mistake doesn't lock the UI.
+  `$RECYCLE.BIN`, etc.). Caps at 1024 files per drop, limiting how many
+  images are added in one operation (very large directories are still
+  enumerated to find the lex-smallest subset, so a misdrop on a huge
+  folder may take a moment).
 - **Click "Add Images..."** in the side panel, toolbar, or **Edit** menu
   (Ctrl/Cmd+I)
 - **Open a saved `.fbcd` project file** — either via File → Open, by
