@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import APP_NAME, __version__
+from . import __version__
 from .core.image_prep import CD_USABLE_BYTES, total_disc_payload
 from .core.iso_builder import BuildOptions, BuildResult, build as build_iso, validate_project
 from .core.plugins import load_plugins
@@ -198,8 +198,13 @@ def main(argv: list[str] | None = None) -> int:
             return code
         return 1
 
-    if ns.command in (None, "gui"):
-        return _launch_gui(getattr(ns, "paths", []))
+    if ns.command is None:
+        return _launch_gui([])
+    if ns.command == "gui":
+        gui_paths = list(getattr(ns, "paths", []))
+        if any(path.startswith("-") for path in gui_paths):
+            return _launch_gui(["--", *gui_paths])
+        return _launch_gui(gui_paths)
     if ns.command == "validate":
         return _run_validate(ns.project)
     if ns.command == "inspect":

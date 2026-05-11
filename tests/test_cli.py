@@ -42,6 +42,19 @@ def test_main_double_dash_forwards_to_gui(monkeypatch):
     assert seen["args"] == ["--", "./-project.fbcd"]
 
 
+def test_gui_subcommand_preserves_dash_prefixed_paths(monkeypatch):
+    seen: dict[str, list[str]] = {}
+
+    def fake_launch(args: list[str]) -> int:
+        seen["args"] = list(args)
+        return 11
+
+    monkeypatch.setattr(cli, "_launch_gui", fake_launch)
+    rc = cli.main(["gui", "--", "-project.fbcd"])
+    assert rc == 11
+    assert seen["args"] == ["--", "-project.fbcd"]
+
+
 def test_main_parse_error_returns_two(capsys):
     rc = cli.main(["validate"])
     err = capsys.readouterr().err
