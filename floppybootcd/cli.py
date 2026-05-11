@@ -188,6 +188,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     if first == "help":
         args = ["--help"]
+    if first == "gui":
+        dash_index = next(
+            (i for i, value in enumerate(args[1:], start=1) if value.startswith("-") and value != "--"),
+            -1,
+        )
+        if dash_index >= 0 and (dash_index == 1 or args[dash_index - 1] != "--"):
+            args = [*args[:dash_index], "--", *args[dash_index:]]
     try:
         ns = parser.parse_args(args)
     except SystemExit as exc:
