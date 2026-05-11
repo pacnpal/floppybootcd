@@ -217,7 +217,7 @@ class ClassicMainWindow:
         )
         if not path:
             return False
-        if not path.lower().endswith(PROJECT_EXT):
+        if Path(path).suffix.lower() != PROJECT_EXT:
             path += PROJECT_EXT
         self.project_path = Path(path)
         return self.save_project()

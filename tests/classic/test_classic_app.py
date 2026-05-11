@@ -37,3 +37,19 @@ def test_resolve_input_paths_collects_and_deduplicates_images(tmp_path):
 
     assert project_path is None
     assert images == [str(disk1.resolve()), str(disk2.resolve())]
+
+
+def test_resolve_input_paths_keeps_first_seen_order_when_duplicates_repeat(tmp_path):
+    disk1 = tmp_path / "a.img"
+    disk1.write_bytes(b"x")
+    disk2 = tmp_path / "b.ima"
+    disk2.write_bytes(b"y")
+
+    project_path, images = resolve_input_paths([
+        str(disk2),
+        str(tmp_path),
+        str(disk1),
+    ])
+
+    assert project_path is None
+    assert images == [str(disk2.resolve()), str(disk1.resolve())]
