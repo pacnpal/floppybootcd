@@ -778,9 +778,211 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # ─── macOS universal2 merge ────────────────────────────────────────────────
+  # PySide6 wheels on PyPI are arch-specific — there is no universal2 wheel,
+  # so PyInstaller --target-arch universal2 cannot be used directly.  The
+  # dual-build + lipo-merge strategy sidesteps this: each macOS runner
+  # (arm64 and x86_64) builds a native .app bundle independently; this job
+  # downloads both, uses `lipo` to merge every Mach-O binary into a fat
+  # universal2 slice, re-applies ad-hoc signatures (lipo invalidates the
+  # PyInstaller-generated ones), and re-packages the result as a third
+  # artifact alongside the two per-arch zips.
+  #
+  # The per-arch artifacts are kept so users can still download the smaller
+  # architecture-specific bundle if they prefer.
+  build-macos-universal2:
+    name: Build (macos-universal2)
+    needs: build
+    runs-on: macos-15
+
+    steps:
+      - name: Check out source (for version resolution)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            REF="${GITHUB_REF#refs/tags/}"
+          elif [ -n "${{ github.event.inputs.tag }}" ]; then
+            REF="${{ github.event.inputs.tag }}"
+          else
+            REF="dev-$(git rev-parse --short HEAD)"
+          fi
+          VER="${REF#v}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Download macOS arm64 artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: floppybootcd-macos-arm64
+          path: input/arm64/
+
+      - name: Download macOS x86_64 artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: floppybootcd-macos-x86_64
+          path: input/x86_64/
+
+      - name: Unzip per-arch .app bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/arm64 work/x86_64
+          ditto -x -k \
+            "input/arm64/floppybootcd-${{ steps.version.outputs.version }}-macos-arm64.zip" \
+            work/arm64/
+          ditto -x -k \
+            "input/x86_64/floppybootcd-${{ steps.version.outputs.version }}-macos-x86_64.zip" \
+            work/x86_64/
+
+      - name: Merge into universal2 .app
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARM64_APP="work/arm64/floppybootcd.app"
+          X86_64_APP="work/x86_64/floppybootcd.app"
+          UNIVERSAL_APP="work/universal/floppybootcd.app"
+
+          if [ ! -d "$ARM64_APP" ]; then
+            echo "ERROR: arm64 bundle not found at $ARM64_APP"
+            ls -la work/arm64/
+            exit 1
+          fi
+          if [ ! -d "$X86_64_APP" ]; then
+            echo "ERROR: x86_64 bundle not found at $X86_64_APP"
+            ls -la work/x86_64/
+            exit 1
+          fi
+
+          # Use the arm64 bundle as the template.
+          # ditto preserves symlinks, resource forks, and ACLs.
+          mkdir -p work/universal
+          ditto "$ARM64_APP" "$UNIVERSAL_APP"
+
+          merged=0
+          already_fat=0
+          no_counterpart=0
+
+          # Walk every regular (non-symlink) file in the arm64 bundle.
+          # For each Mach-O binary, combine with the x86_64 counterpart
+          # using `lipo` to produce a fat universal2 slice.
+          # Non-Mach-O files (Python bytecode, data, plists, icons, etc.)
+          # are already in the universal bundle from the ditto copy above.
+          while IFS= read -r -d '' arm64_file; do
+            rel="${arm64_file#${ARM64_APP}/}"
+            univ_file="${UNIVERSAL_APP}/${rel}"
+            x86_file="${X86_64_APP}/${rel}"
+
+            filetype=$(file -b "$arm64_file" 2>/dev/null || true)
+            case "$filetype" in
+              *"Mach-O"*) ;;
+              *) continue ;;
+            esac
+
+            # Already a fat (universal) binary — nothing to merge.
+            if [[ "$filetype" == *"universal binary"* ]]; then
+              already_fat=$((already_fat + 1))
+              continue
+            fi
+
+            if [ ! -f "$x86_file" ]; then
+              echo "WARNING: no x86_64 counterpart for $rel — keeping arm64 slice"
+              no_counterpart=$((no_counterpart + 1))
+              continue
+            fi
+
+            lipo -create "$arm64_file" "$x86_file" -output "$univ_file"
+            merged=$((merged + 1))
+          done < <(find "$ARM64_APP" -not -type d -not -type l -print0)
+
+          echo ""
+          echo "universal2 merge complete:"
+          echo "  lipo'd:          $merged"
+          echo "  already fat:     $already_fat"
+          echo "  no x86 partner:  $no_counterpart"
+
+          # Re-apply ad-hoc signatures. lipo invalidates the existing
+          # per-arch code signatures left by PyInstaller. --deep re-signs
+          # every nested Mach-O binary with the ad-hoc identity (-), which
+          # is sufficient for the macOS dynamic linker. Gatekeeper bypass
+          # still requires: xattr -dr com.apple.quarantine floppybootcd.app
+          # — identical to the per-arch bundles.
+          codesign --force --deep --sign - "$UNIVERSAL_APP"
+          echo "Ad-hoc re-signed universal2 bundle."
+
+      - name: Verify universal2 binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNIVERSAL_APP="work/universal/floppybootcd.app"
+          errors=0
+
+          # Confirm the two most important Mach-O binaries carry both slices.
+          for candidate in \
+              "Contents/MacOS/floppybootcd" \
+              "Contents/Resources/bin/xorriso"; do
+            f="${UNIVERSAL_APP}/${candidate}"
+            if [ ! -f "$f" ]; then
+              echo "SKIP (not present): $candidate"
+              continue
+            fi
+            info=$(lipo -info "$f")
+            echo "$info"
+            if ! echo "$info" | grep -q "x86_64"; then
+              echo "ERROR: missing x86_64 slice in $candidate"
+              errors=$((errors + 1))
+            fi
+            if ! echo "$info" | grep -q "arm64"; then
+              echo "ERROR: missing arm64 slice in $candidate"
+              errors=$((errors + 1))
+            fi
+          done
+
+          # Full arch report for every Mach-O in the bundle.
+          echo ""
+          echo "--- Arch breakdown (all Mach-O files) ---"
+          find "$UNIVERSAL_APP" -not -type d -not -type l | sort | \
+          while read -r f; do
+            if file -b "$f" 2>/dev/null | grep -q "Mach-O"; then
+              lipo -info "$f" 2>/dev/null | tr '\n' ' '
+              echo "  ← ${f#${UNIVERSAL_APP}/}"
+            fi
+          done
+
+          if [ "$errors" -gt 0 ]; then
+            echo ""
+            echo "ERROR: $errors verification failure(s). Aborting."
+            exit 1
+          fi
+          echo ""
+          echo "All checked binaries are universal2. ✓"
+
+      - name: Package universal2 build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cd work/universal
+          ditto -c -k --keepParent --sequesterRsrc \
+            "floppybootcd.app" \
+            "../../dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip"
+
+      - name: Upload universal2 artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: floppybootcd-macos-universal2
+          path: dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     name: Publish release assets
-    needs: build
+    needs: [build, build-macos-universal2]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

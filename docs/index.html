@@ -381,8 +381,9 @@
             in your file manager open the app via OS-level file
             association (macOS, .deb/.rpm Linux, Windows registry
             opt-in)</li>
-        <li>macOS / Windows / Linux &mdash; x86_64 and arm64
-            (Linux as AppImage, .deb, .rpm, tarball)</li>
+        <li>macOS / Windows / Linux &mdash; macOS ships as universal2
+            (arm64 + x86_64 in one binary), arm64-only, or x86_64-only;
+            Linux as AppImage, .deb, .rpm, tarball</li>
       </ul>
     </div>
 
@@ -426,8 +427,14 @@
       <h2>[ Installation in 30 Seconds ]</h2>
 
       <h3>macOS</h3>
+      <p style="font-size:13px; margin:4px 0 8px;">
+        Use <code>universal2</code> if you're unsure which Mac you have &mdash;
+        it runs natively on both Apple Silicon and Intel.
+        Replace <code>&lt;arch&gt;</code> with <code>universal2</code>,
+        <code>arm64</code>, or <code>x86_64</code>.
+      </p>
       <pre><code>cd ~/Downloads
-unzip floppybootcd-*-macos-arm64.zip
+unzip floppybootcd-*-macos-&lt;arch&gt;.zip
 xattr -dr com.apple.quarantine floppybootcd.app
 mv floppybootcd.app /Applications/
 open /Applications/floppybootcd.app</code></pre>
@@ -466,6 +473,7 @@ floppybootcd</code></pre>
           <tr><th>Bundle</th><th>Minimum OS</th></tr>
         </thead>
         <tbody>
+          <tr><td>macOS universal2 (arm64 + x86_64)</td><td>macOS 13 (Ventura)</td></tr>
           <tr><td>macOS arm64 / x86_64</td><td>macOS 13 (Ventura)</td></tr>
           <tr><td>Windows x86_64</td><td>Windows 10 1809 (Oct 2018)</td></tr>
           <tr><td>Windows arm64</td><td>Windows 11 22H2</td></tr>
@@ -533,6 +541,7 @@ floppybootcd</code></pre>
   //   .rpm      — Fedora / RHEL / openSUSE
   //   .tar.gz   — raw bundle (advanced users / read-only filesystems)
   const PLATFORMS = [
+    { label: "macOS 13+",       arch: "Universal (arm64 + x86_64)", match: /-macos-universal2\.zip$/ },
     { label: "macOS 13+",       arch: "Apple Silicon",       match: /-macos-arm64\.zip$/ },
     { label: "macOS 13+",       arch: "Intel",               match: /-macos-x86_64\.zip$/ },
     { label: "Windows 10/11",   arch: "x86_64",              match: /-windows-x86_64\.zip$/ },
