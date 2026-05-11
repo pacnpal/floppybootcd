@@ -199,14 +199,16 @@ def _parse_cli_paths(argv: list[str]) -> list[str]:
     Returns:
         List of path strings to hand to ``_dispatch_batch``.
     """
-    if "--" in argv:
-        sep = argv.index("--")
-        explicit = argv[sep + 1:]
-        flags_region = argv[:sep]
-    else:
-        explicit = []
-        flags_region = argv
-    return explicit + [a for a in flags_region if a and not a.startswith("-")]
+    result: list[str] = []
+    past_sep = False
+    for a in argv:
+        if not past_sep and a == "--":
+            past_sep = True
+        elif past_sep:
+            result.append(a)          # after '--': literal path, even if empty or starts with '-'
+        elif a and not a.startswith("-"):
+            result.append(a)          # before '--': drop empty strings and flag-like args
+    return result
 
 
 def main() -> int:

@@ -262,3 +262,8 @@ class TestParseCliPaths:
     def test_psn_flag_filtered(self):
         # macOS passes -psn_* to every GUI app; it must not be dispatched.
         assert _parse_cli_paths(["-psn_0_12345", "/tmp/x.img"]) == ["/tmp/x.img"]
+
+    def test_mixed_order_preserved(self):
+        # Pre- and post-'--' paths are returned in original left-to-right
+        # order, not reordered (post-'--' first).
+        assert _parse_cli_paths(["foo.img", "--", "bar.img"]) == ["foo.img", "bar.img"]
