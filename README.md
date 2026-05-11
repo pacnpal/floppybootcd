@@ -22,6 +22,10 @@ Each image is loaded into RAM via MEMDISK and presented to the OS as if it
 were sitting in a real floppy drive — so DOS, Windows 9x, and other INT 13h
 operating systems boot exactly as they would from physical media.
 
+A classic compatibility frontend is also available as
+`floppybootcd-classic` (Tkinter/stdlib-first). See
+[`docs/classic-ui.md`](docs/classic-ui.md) for its scope and drift policy.
+
 ---
 
 ## Quick start
@@ -260,6 +264,9 @@ piwheels has a wheel for your Pi OS version. See
 > **Note:** FloppyBootCD installs straight from this GitHub repo. It is
 > not on PyPI. The commands below all use the
 > `git+https://github.com/pacnpal/floppybootcd` source.
+>
+> Use `floppybootcd` for the Qt UI (default) or `floppybootcd-classic`
+> for the compatibility-first Tkinter UI.
 
 #### macOS
 
@@ -1238,6 +1245,7 @@ floppybootcd/
     ├── __init__.py
     ├── __main__.py             # python -m floppybootcd entry
     ├── app.py                  # main(), platform setup, plugin loading
+    ├── classic_app.py          # Tkinter compatibility frontend
     ├── core/                   # no Qt dependency in here
     │   ├── platform.py         # platform detection + native paths
     │   ├── project.py          # Project / FloppyImage data model

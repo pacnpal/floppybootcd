@@ -37,6 +37,7 @@ test = [
 
 [project.scripts]
 floppybootcd = "floppybootcd.app:main"
+floppybootcd-classic = "floppybootcd.classic_app:main"
 
 [project.gui-scripts]
 floppybootcd-gui = "floppybootcd.app:main"
