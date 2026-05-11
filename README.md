@@ -38,6 +38,7 @@ each OS work too. Older versions need [install from source](#install-from-source
 
 | Bundle | Runs on | Minimum version | Notes |
 |--------|---------|-----------------|-------|
+| `macos-universal2` | macOS on Apple Silicon **and** Intel — single binary for both | **macOS 13 (Ventura)** | Fat binary (arm64 + x86_64 slices) produced by `lipo`-merging the two per-arch bundles; runs natively on both architectures with no Rosetta layer. Pick this if you're unsure which Mac you have. |
 | `macos-arm64` | macOS on Apple Silicon (M1/M2/M3/M4 etc.) | **macOS 13 (Ventura)** | Built on macOS 15 against the macOS 13.0 SDK |
 | `macos-x86_64` | macOS on Intel | **macOS 13 (Ventura)** | Built on macOS 15 (Intel) against the macOS 13.0 SDK |
 | `windows-x86_64` | Windows on Intel/AMD x86_64 | **Windows 10 1809** (Oct 2018) | Native build; runs on Windows 10, 11, Server 2019/2022/2025 |
@@ -57,6 +58,7 @@ platform. Pick the one that matches your machine:
 
 | Platform | File | xorriso bundled? |
 |----------|------|------------------|
+| macOS (universal — Apple Silicon + Intel) | `floppybootcd-<version>-macos-universal2.zip` | yes (universal2: native arm64 + x86_64) |
 | macOS (Apple Silicon, M1/M2/M3/M4) | `floppybootcd-<version>-macos-arm64.zip` | yes (native arm64) |
 | macOS (Intel) | `floppybootcd-<version>-macos-x86_64.zip` | yes (native x86_64) |
 | Windows (x86_64) | `floppybootcd-<version>-windows-x86_64.zip` | yes (native x86_64) |
@@ -96,10 +98,18 @@ and the full attribution.
 
 #### macOS
 
+Three macOS zips are published for every release. Pick the one that fits:
+
+| Zip | Use when |
+|-----|----------|
+| `macos-universal2` | **Recommended — works on any Mac.** One binary runs natively on both Apple Silicon and Intel with no Rosetta translation layer. Slightly larger than the per-arch zips. |
+| `macos-arm64` | Apple Silicon only (M1 / M2 / M3 / M4 and later). Smaller download if you know your machine is ARM. |
+| `macos-x86_64` | Intel only. Smaller download if you know your machine is x86_64. |
+
 ```bash
-# 1. Unzip the download.
+# 1. Unzip the download (replace <arch> with universal2, arm64, or x86_64).
 cd ~/Downloads
-unzip floppybootcd-<version>-macos-arm64.zip
+unzip floppybootcd-<version>-macos-<arch>.zip
 
 # 2. macOS quarantines apps downloaded from the web, and (since macOS 15
 #    Sequoia) blocks them outright with no right-click "Open" bypass.
@@ -127,10 +137,10 @@ right-click → Open trick.
 > code-signed with a Developer ID and notarized through Apple's service
 > before they'll launch from a downloaded zip without a warning. This
 > project does not currently distribute signed builds — the binaries are
-> ad-hoc signed by PyInstaller, which is enough to satisfy the macOS
-> loader but not Gatekeeper. The `xattr` command above removes the
-> "downloaded from the internet" flag, which is what triggers the block;
-> it does not disable Gatekeeper or bypass any other security check.
+> ad-hoc signed, which is enough to satisfy the macOS loader but not
+> Gatekeeper. The `xattr` command above removes the "downloaded from the
+> internet" flag, which is what triggers the block; it does not disable
+> Gatekeeper or bypass any other security check.
 
 #### Windows
 
