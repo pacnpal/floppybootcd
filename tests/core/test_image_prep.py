@@ -127,6 +127,19 @@ class TestWalkFloppyImages:
         names = [Path(p).name for p in found]
         assert names == ["good.img"]
 
+    def test_file_path_with_hidden_name_is_not_skipped(self, tmp_path):
+        """Hidden-name filtering applies to directory walking only.
+        Dropping a hidden file directly means the user explicitly
+        named it — return it without filtering."""
+        f = tmp_path / ".secret-boot.img"
+        f.write_bytes(b"")
+        # File case: explicit choice → return.
+        assert image_prep.walk_floppy_images(f) == [str(f)]
+        # Directory case (containing the same hidden file) → skip.
+        # Counter-test that keeps the two semantics paired so a
+        # future change to one branch surfaces here too.
+        assert image_prep.walk_floppy_images(tmp_path) == []
+
     def test_folder_skips_apple_double_and_recycle_dirs(self, tmp_path):
         (tmp_path / "real.img").write_bytes(b"")
         for trash in (".AppleDouble", "$RECYCLE.BIN", "System Volume Information"):

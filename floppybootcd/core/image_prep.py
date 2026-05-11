@@ -95,21 +95,44 @@ _DROP_DIR_SCAN_CAP = _DROP_FILE_LIMIT * 8
 def walk_floppy_images(path: str | Path) -> list[str]:
     """Return floppy-image paths discovered at *path*.
 
-    - If *path* is a file with a recognized extension, returns it as a
-      single-element list.
-    - If *path* is a directory, walks it (up to ``_DROP_RECURSION_LIMIT``
-      levels) and returns every floppy image inside in a deterministic
-      depth-first order: each directory's entries are sorted by name
-      and folders descended into before moving to the next sibling.
-      Order is stable across runs for a given filesystem layout but is
-      *not* a global lexicographic sort across nested folders — files
-      group by their containing directory, which is what users expect
-      when re-opening a previously-built collection.
-    - Otherwise returns an empty list.
+    File case
+        If *path* is a file with a recognized extension, returns it
+        as a single-element list. This branch is intentionally
+        permissive — the user explicitly named the file, so hidden-
+        name and other cruft filters do **not** apply. Dropping
+        ``~/.private/boot.img`` directly will return it.
 
-    Skips hidden files (``.foo``), dot-directories, and macOS
-    ``.AppleDouble`` / Windows ``$RECYCLE.BIN`` cruft so drops on
-    cloud-synced collections behave predictably.
+    Directory case
+        If *path* is a directory, walks it depth-first and returns
+        floppy images inside, subject to three caps:
+
+        * **Recursion depth ≤ ``_DROP_RECURSION_LIMIT`` levels**
+          (currently 5). Anything deeper is silently skipped — a
+          misdrop on ``~`` or ``/`` doesn't recurse the whole tree.
+        * **Per-directory enumeration ≤ ``_DROP_DIR_SCAN_CAP``**
+          (currently 8× the file cap). For directories with more
+          entries than this, ``heapq.nsmallest`` keeps only the
+          ``_DROP_DIR_SCAN_CAP`` lex-smallest names. Memory stays
+          bounded and the kept subset is the same on every
+          filesystem (deterministic), but it is **not** the entire
+          directory.
+        * **Global result ≤ ``_DROP_FILE_LIMIT`` files**
+          (currently 1024). Traversal stops once the cap is hit.
+
+        Within those caps, ordering is depth-first with each
+        directory's entries lex-sorted (deterministic for a given
+        filesystem layout; files group by their containing
+        directory, *not* a global lex sort).
+
+        During directory walking the following entries are skipped:
+        hidden names (``.foo``), dot-directories, and the
+        platform-specific cruft folders ``.AppleDouble``,
+        ``$RECYCLE.BIN``, ``System Volume Information`` — so drops
+        on cloud-synced collections behave predictably. These
+        filters apply *only* in the directory branch; see the file
+        case above for the contrast.
+
+    Any other *path* (nonexistent, special file) returns ``[]``.
     """
     p = Path(path)
     if p.is_file():
