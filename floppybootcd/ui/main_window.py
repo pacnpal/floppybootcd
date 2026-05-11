@@ -782,24 +782,31 @@ class MainWindow(QMainWindow):
         from ..core.image_prep import walk_floppy_images
         from ..core.project import PROJECT_EXT
 
-        project_path: str | None = None
-        floppy_paths: list[str] = []
-        existing = {img.path for img in self.project.images}
-        for url in e.mimeData().urls():
+        # .fbcd wins over images in the same drop because loading a
+        # project replaces the image list anyway. Pre-scan for it in
+        # one cheap pass so we don't waste UI-thread time recursing
+        # a 100k-entry folder whose result we'd then throw away.
+        urls = list(e.mimeData().urls())
+        for url in urls:
             if not url.isLocalFile():
                 continue
             p = Path(url.toLocalFile())
             if p.is_file() and p.suffix.lower() == PROJECT_EXT:
-                project_path = str(p)
+                self.open_project_path(str(p))
+                e.acceptProposedAction()
+                return
+
+        # No .fbcd in the drop; collect floppy images from files and
+        # folders.
+        floppy_paths: list[str] = []
+        existing = {img.path for img in self.project.images}
+        for url in urls:
+            if not url.isLocalFile():
                 continue
-            for found in walk_floppy_images(p):
+            for found in walk_floppy_images(Path(url.toLocalFile())):
                 if found not in existing and found not in floppy_paths:
                     floppy_paths.append(found)
 
-        if project_path:
-            self.open_project_path(project_path)
-            e.acceptProposedAction()
-            return
         if floppy_paths:
             self._add_paths(floppy_paths)
             e.acceptProposedAction()

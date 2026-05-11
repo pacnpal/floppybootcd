@@ -39,11 +39,20 @@ class FloppyBootCDApplication(QApplication):
         self._main_window = None
 
     def set_main_window(self, win) -> None:
-        """Wire MainWindow as the receiver and flush any buffered drops."""
+        """Wire MainWindow as the receiver and flush any buffered drops.
+
+        Buffered paths are batched through :meth:`_dispatch_batch` so a
+        QFileOpenEvent flood (e.g. macOS sending several file-open events
+        in quick succession when the app is launched as a multi-file
+        handler) doesn't accidentally add an image first, mark the
+        project dirty, and then prompt the user about unsaved changes
+        when a later .fbcd in the same batch tries to open. The batch
+        applies "project wins" semantics — see _dispatch_batch.
+        """
         self._main_window = win
         pending, self._pending_open_paths = self._pending_open_paths, []
-        for p in pending:
-            self._dispatch(p)
+        if pending:
+            self._dispatch_batch(pending)
 
     @staticmethod
     def _canonicalize(path: str) -> str:
@@ -81,6 +90,32 @@ class FloppyBootCDApplication(QApplication):
         found = walk_floppy_images(p)
         if found:
             win.add_paths(found)
+
+    def _dispatch_batch(self, paths: list[str]) -> None:
+        """Dispatch a batch of paths with "project wins" semantics.
+
+        Used by both the argv loop in :func:`main` and the
+        :meth:`set_main_window` flush of ``QFileOpenEvent`` paths.
+        Both call sites can hand us a mix of types:
+
+            $ floppybootcd boot.img project.fbcd
+
+        The naive sequential dispatch would add ``boot.img`` first
+        (marking the project dirty), then call ``open_project_path``
+        for ``project.fbcd``, which would prompt the user to save
+        changes to a project they never explicitly created. Pre-scan
+        the batch for any ``.fbcd`` and, if found, dispatch ONLY the
+        first one — the project replaces the entire image list
+        anyway, so the rest of the batch would have been clobbered.
+        """
+        canonical = [self._canonicalize(p) for p in paths]
+        for cp in canonical:
+            cp_path = Path(cp)
+            if cp_path.is_file() and cp_path.suffix.lower() == PROJECT_EXT:
+                self._dispatch(cp)
+                return
+        for cp in canonical:
+            self._dispatch(cp)
 
     def event(self, ev: QEvent) -> bool:  # type: ignore[override]
         if ev.type() == QEvent.Type.FileOpen and isinstance(ev, QFileOpenEvent):
@@ -141,23 +176,23 @@ def main() -> int:
     win = MainWindow()
     app.set_main_window(win)                   # flush any QFileOpenEvent buffered at launch
 
-    # CLI invocation paths: forward anything after argv[0] to
-    # _dispatch. Covers Windows file double-click (which spawns
-    # floppybootcd.exe <path>), Linux xdg-open (likewise), and shell
-    # invocations like `floppybootcd ~/project.fbcd`. _dispatch
-    # canonicalizes its input (expanduser + resolve) and silently
-    # no-ops for paths that don't exist or that aren't a recognized
-    # floppy image / folder / .fbcd, so we DON'T pre-check existence
-    # here — pre-checking with a literal "~/foo" would skip dispatch
-    # for shell-quoted paths whose tilde the OS hasn't expanded yet
-    # (PowerShell, cmd.exe with delayed expansion, etc.). The empty-
-    # string and Qt-flag guards stay; without them
-    # `floppybootcd ""` would Path("").exists() == True (resolves to
-    # CWD) and recurse the working directory.
-    for arg in sys.argv[1:]:
-        if not arg or arg.startswith("-"):
-            continue  # skip empty / Qt flag args
-        app._dispatch(arg)
+    # CLI invocation paths: forward everything after argv[0] to
+    # _dispatch_batch. Covers Windows file double-click (which
+    # spawns floppybootcd.exe <path>), Linux xdg-open (likewise),
+    # and shell invocations like `floppybootcd ~/project.fbcd`.
+    # _dispatch (called from the batch) canonicalizes its input
+    # (expanduser + resolve) and silently no-ops for paths that
+    # don't exist or aren't a recognized floppy image / folder /
+    # .fbcd, so we DON'T pre-check existence here — pre-checking
+    # with a literal "~/foo" would skip dispatch for shell-quoted
+    # paths whose tilde the OS hasn't expanded yet (PowerShell,
+    # cmd.exe with delayed expansion, etc.). The empty-string and
+    # Qt-flag guards stay; without them `floppybootcd ""` would
+    # Path("").exists() == True (resolves to CWD) and recurse the
+    # working directory.
+    cli_paths = [a for a in sys.argv[1:] if a and not a.startswith("-")]
+    if cli_paths:
+        app._dispatch_batch(cli_paths)
 
     win.show()
     return app.exec()

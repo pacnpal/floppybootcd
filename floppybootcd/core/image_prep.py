@@ -11,9 +11,11 @@ user-facing error.
 from __future__ import annotations
 
 import functools
+import os
 import re
 import shutil
 import zipfile
+from itertools import islice
 from pathlib import Path
 
 
@@ -53,6 +55,16 @@ _DROP_RECURSION_LIMIT = 5
 # the UI show what made it in.
 _DROP_FILE_LIMIT = 1024
 
+# Per-directory enumeration cap. Bounds wall-clock per dropped folder
+# even if the folder contains millions of entries. Set to 8x the file
+# cap so a typical "folder of floppies" (a few hundred entries) is
+# fully enumerated and lexically sorted, while a misdrop on a
+# pathological dir (~/Downloads, /, the desktop) still returns
+# quickly with a deterministic-up-to-cap subset. The cost of
+# `sorted(d.iterdir())` was O(N log N) on the directory size — the
+# `islice` cap below keeps that bounded regardless of N.
+_DROP_DIR_SCAN_CAP = _DROP_FILE_LIMIT * 8
+
 
 def walk_floppy_images(path: str | Path) -> list[str]:
     """Return floppy-image paths discovered at *path*.
@@ -85,24 +97,41 @@ def walk_floppy_images(path: str | Path) -> list[str]:
     def _walk(d: Path, depth: int) -> None:
         if depth > _DROP_RECURSION_LIMIT or len(results) >= _DROP_FILE_LIMIT:
             return
+        # os.scandir + islice avoids materializing a 100k-entry
+        # directory just to take the first N — `sorted(iterdir())`
+        # was O(N log N) on the source dir size regardless of how
+        # many results we kept. The context manager releases the
+        # underlying OS handle even when islice short-circuits.
         try:
-            entries = sorted(d.iterdir())
+            with os.scandir(d) as it:
+                entries = sorted(islice(it, _DROP_DIR_SCAN_CAP),
+                                 key=lambda e: e.name)
         except OSError:
             return
         for entry in entries:
             if entry.name.startswith("."):
                 continue
-            if entry.is_dir():
-                if entry.name in skip_dir_names:
-                    continue
-                _walk(entry, depth + 1)
-                if len(results) >= _DROP_FILE_LIMIT:
-                    return
-            elif entry.is_file():
-                if entry.suffix.lower() in ALL_ACCEPTED_EXTS:
-                    results.append(str(entry))
+            # DirEntry.is_dir() / is_file() use cached stat data
+            # populated by the OS during scandir, so they don't
+            # cost an extra syscall per entry the way Path versions
+            # would.
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    if entry.name in skip_dir_names:
+                        continue
+                    _walk(Path(entry.path), depth + 1)
                     if len(results) >= _DROP_FILE_LIMIT:
                         return
+                elif entry.is_file(follow_symlinks=False):
+                    if Path(entry.name).suffix.lower() in ALL_ACCEPTED_EXTS:
+                        results.append(entry.path)
+                        if len(results) >= _DROP_FILE_LIMIT:
+                            return
+            except OSError:
+                # Permission denied / unreadable entry — skip and
+                # keep scanning; one bad entry shouldn't abort the
+                # whole drop.
+                continue
 
     _walk(p, 0)
     return results

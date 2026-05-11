@@ -113,27 +113,33 @@ class ImageListWidget(QListWidget):
             #     project after the usual unsaved-changes prompt).
             # (b) any combination of floppy-image files and folders
             #     → recurse folders, flatten to a deduped path list,
-            #     emit files_dropped. The .fbcd case wins if both
-            #     are present in the same drop because loading a
-            #     project replaces the image list anyway.
-            project_path = None
-            floppy_paths: list[str] = []
-            existing = self._existing_paths()
-            for url in mime.urls():
+            #     emit files_dropped.
+            # A project .fbcd wins over images in the same drop
+            # because loading a project replaces the image list
+            # anyway. Pre-scan for .fbcd in a single cheap pass so
+            # we don't waste UI-thread time recursing a 100k-entry
+            # folder whose result we'd then throw away.
+            urls = list(mime.urls())
+            for url in urls:
                 if not url.isLocalFile():
                     continue
                 p = Path(url.toLocalFile())
                 if p.is_file() and p.suffix.lower() == PROJECT_EXT:
-                    project_path = str(p)
+                    self.project_dropped.emit(str(p))
+                    e.acceptProposedAction()
+                    return
+
+            # No .fbcd in the drop; collect floppy images from files
+            # and folders.
+            floppy_paths: list[str] = []
+            existing = self._existing_paths()
+            for url in urls:
+                if not url.isLocalFile():
                     continue
-                for found in walk_floppy_images(p):
+                for found in walk_floppy_images(Path(url.toLocalFile())):
                     if found not in existing and found not in floppy_paths:
                         floppy_paths.append(found)
 
-            if project_path:
-                self.project_dropped.emit(project_path)
-                e.acceptProposedAction()
-                return
             if floppy_paths:
                 self.files_dropped.emit(floppy_paths)
                 e.acceptProposedAction()

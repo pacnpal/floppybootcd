@@ -64,3 +64,71 @@ class TestCanonicalize:
         once = canon(str(f))
         twice = canon(once)
         assert once == twice
+
+
+class TestDispatchBatch:
+    """_dispatch_batch is the entry point used by both the CLI argv
+    loop and the QFileOpenEvent flush. Tested here via a duck-typed
+    stub because creating a real FloppyBootCDApplication would
+    instantiate a second QApplication in the test process (Qt
+    forbids two)."""
+
+    def _make_stub(self):
+        """Return a stub that captures _dispatch calls; binds the
+        real _dispatch_batch implementation."""
+        calls: list[str] = []
+
+        class Stub:
+            _canonicalize = staticmethod(FloppyBootCDApplication._canonicalize)
+
+            def _dispatch(self, path: str) -> None:
+                calls.append(path)
+
+        Stub._dispatch_batch = FloppyBootCDApplication._dispatch_batch
+        return Stub(), calls
+
+    def test_no_fbcd_dispatches_every_path(self, tmp_path):
+        a = tmp_path / "a.img"; a.write_bytes(b"")
+        b = tmp_path / "b.imz"; b.write_bytes(b"")
+        c = tmp_path / "c.vfd"; c.write_bytes(b"")
+        stub, calls = self._make_stub()
+        stub._dispatch_batch([str(a), str(b), str(c)])
+        # All three dispatched in order.
+        assert calls == [str(a.resolve()), str(b.resolve()), str(c.resolve())]
+
+    def test_fbcd_in_batch_wins_and_ignores_rest(self, tmp_path):
+        # If even one .fbcd is in the batch, it should be dispatched
+        # alone — opening it replaces the project, so adding the
+        # other paths first would just dirty a project the user
+        # never asked to create.
+        img = tmp_path / "boot.img"; img.write_bytes(b"")
+        proj = tmp_path / "p.fbcd"; proj.write_bytes(b"{}")
+        other = tmp_path / "more.img"; other.write_bytes(b"")
+        stub, calls = self._make_stub()
+        stub._dispatch_batch([str(img), str(proj), str(other)])
+        # Only the .fbcd is dispatched.
+        assert calls == [str(proj.resolve())]
+
+    def test_fbcd_anywhere_in_batch_wins(self, tmp_path):
+        # The .fbcd is the LAST entry — still wins.
+        img = tmp_path / "first.img"; img.write_bytes(b"")
+        proj = tmp_path / "last.fbcd"; proj.write_bytes(b"{}")
+        stub, calls = self._make_stub()
+        stub._dispatch_batch([str(img), str(proj)])
+        assert calls == [str(proj.resolve())]
+
+    def test_first_fbcd_wins_when_multiple_present(self, tmp_path):
+        # Two .fbcd → only the first one (in argv order) opens.
+        # Opening multiple projects sequentially would prompt the
+        # user to save between each; pick one and let the user
+        # File→Open the others if they want.
+        a = tmp_path / "first.fbcd"; a.write_bytes(b"{}")
+        b = tmp_path / "second.fbcd"; b.write_bytes(b"{}")
+        stub, calls = self._make_stub()
+        stub._dispatch_batch([str(a), str(b)])
+        assert calls == [str(a.resolve())]
+
+    def test_empty_batch_no_dispatch(self):
+        stub, calls = self._make_stub()
+        stub._dispatch_batch([])
+        assert calls == []
