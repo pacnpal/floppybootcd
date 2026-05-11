@@ -179,6 +179,10 @@ def build(
     xorriso = find_xorriso(options.xorriso_override)
     if not xorriso:
         raise RuntimeError(install_hint())
+    # xorriso runs with cwd=staging_root below — a relative path (e.g. a
+    # user override of "./xorriso") would otherwise be resolved against
+    # the temp staging dir and fail. Absolutize against the caller's cwd.
+    xorriso = str(Path(xorriso).resolve())
     log(f"Using xorriso: {xorriso}")
 
     # Stage
