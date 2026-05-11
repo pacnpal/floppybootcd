@@ -369,15 +369,43 @@ class MainWindow(QMainWindow):
         Honors the unsaved-changes prompt the menu action would: a
         dirty current project is offered Save / Discard / Cancel
         before the new project replaces it.
+
+        Failure semantics: a malformed .fbcd that loads but blows up
+        during ``_reload_from_project()`` (e.g. a non-int
+        ``timeout_secs`` that ``QSpinBox.setValue`` rejects) leaves
+        the window's previous project AND widgets intact — the swap
+        is all-or-nothing. A naive "assign first, reload after"
+        sequence would have left ``self.project`` pointing at the
+        new project but widgets showing the old one, an internally
+        inconsistent state where File → Save would write the new
+        project to the new path while the user stared at old data.
         """
         if not self._maybe_save():
             return
+
+        # Snapshot before any swap so a failure can fully roll back.
+        prev_project = self.project
+        prev_path = self.project_path
+        prev_dirty = self._dirty
         try:
             self.project = Project.load(path)
             self.project_path = Path(path)
             self._dirty = False
             self._reload_from_project()
         except Exception as e:
+            # Atomic rollback. _reload_from_project may have partially
+            # populated some widgets before raising; re-running it
+            # against the restored project resyncs them.
+            self.project = prev_project
+            self.project_path = prev_path
+            self._dirty = prev_dirty
+            try:
+                self._reload_from_project()
+            except Exception:
+                # If even the rollback reload fails (it shouldn't —
+                # the previous project is what was already on screen),
+                # don't mask the original error with a secondary one.
+                pass
             QMessageBox.critical(self, "Open failed", str(e))
 
     def _save_project(self) -> bool:

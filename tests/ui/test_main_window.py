@@ -202,6 +202,57 @@ class TestOpenProjectPath:
         # The project the user was working on is preserved.
         assert win.project is original
 
+    def test_open_project_path_rollback_on_partial_load_failure(
+        self, win, tmp_path, monkeypatch
+    ):
+        """A .fbcd that parses cleanly but trips _reload_from_project()
+        (e.g. a non-int timeout_secs that QSpinBox.setValue rejects)
+        must NOT leave self.project / self.project_path / the widgets
+        in a half-swapped state. The old project stays in place; the
+        old widget contents stay in place; an error dialog surfaces."""
+        seen = {}
+        def fake_critical(parent, title, message):
+            seen["title"] = title
+            seen["message"] = message
+
+        import floppybootcd.ui.main_window as mw_mod
+        monkeypatch.setattr(mw_mod.QMessageBox, "critical", fake_critical)
+
+        # Build a .fbcd whose schema parses but whose timeout_secs is
+        # a string — Project.load is forgiving (dataclass accepts any
+        # field value) but timeout_spin.setValue("nope") raises.
+        import json
+        bad = tmp_path / "bad.fbcd"
+        bad.write_text(json.dumps({
+            "title": "Loaded Title",
+            "images": [],
+            "timeout_secs": "not an int",
+            "menu_style": "text",
+            "bootloader": "isolinux",
+            "syslinux_version": "6.03",
+            "background_image": "",
+            "notes": "",
+        }))
+
+        # Establish a known previous state.
+        win.project = Project(title="Original", timeout_secs=42)
+        win.project_path = None
+        win._dirty = False
+        win._reload_from_project()
+        assert win.title_edit.text() == "Original"
+        assert win.timeout_spin.value() == 42
+
+        win.open_project_path(str(bad))
+
+        # Error surfaced.
+        assert "Open failed" in seen.get("title", "")
+        # Project NOT swapped — the rollback ran.
+        assert win.project.title == "Original"
+        assert win.project_path is None
+        # Widgets resynced to the original project.
+        assert win.title_edit.text() == "Original"
+        assert win.timeout_spin.value() == 42
+
 
 class TestReloadDoesNotMarkDirty:
     """Regression: programmatic widget setters in _reload_from_project()
