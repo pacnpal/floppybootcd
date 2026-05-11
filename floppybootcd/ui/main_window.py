@@ -767,11 +767,11 @@ class MainWindow(QMainWindow):
     def dragEnterEvent(self, e) -> None:
         # Delegate the actionability decision to the list widget's
         # hover gate so the two drop targets agree on what counts.
-        # Critically that means the existing-paths dedup check from
-        # _mime_is_acceptable kicks in here too — dragging files
-        # that are all already in the project no longer shows the OS
-        # "accept" cursor when the drop would be a pure no-op.
-        if self.list_widget._mime_is_acceptable(e.mimeData()):
+        # The list widget owns the existing-paths dedup check; both
+        # drop targets get the same "all duplicates → don't show
+        # accept cursor" behavior by routing through the same
+        # public method.
+        if self.list_widget.mime_is_acceptable(e.mimeData()):
             e.acceptProposedAction()
         else:
             e.ignore()

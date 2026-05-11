@@ -54,7 +54,7 @@ class ImageListWidget(QListWidget):
         return {self.item(i).data(Qt.ItemDataRole.UserRole).path
                 for i in range(self.count())}
 
-    def _mime_is_acceptable(self, mime) -> bool:
+    def mime_is_acceptable(self, mime) -> bool:
         """Decide whether to accept a drag at hover time.
 
         Three classes of URL are interesting:
@@ -93,20 +93,20 @@ class ImageListWidget(QListWidget):
         return False
 
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:
-        if self._mime_is_acceptable(e.mimeData()):
+        if self.mime_is_acceptable(e.mimeData()):
             e.acceptProposedAction()
         else:
             super().dragEnterEvent(e)
 
     def dragMoveEvent(self, e: QDragMoveEvent) -> None:
-        if self._mime_is_acceptable(e.mimeData()):
+        if self.mime_is_acceptable(e.mimeData()):
             e.acceptProposedAction()
         else:
             super().dragMoveEvent(e)
 
     def dropEvent(self, e: QDropEvent) -> None:
         mime = e.mimeData()
-        if mime.hasUrls() and self._mime_is_acceptable(mime):
+        if mime.hasUrls() and self.mime_is_acceptable(mime):
             # Two outcomes are possible from a single drop:
             # (a) a .fbcd project file → emit project_dropped and let
             #     the host window load it (replaces the current
