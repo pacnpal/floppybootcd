@@ -222,50 +222,74 @@ class TestDragEnterExplicitIgnore:
     mime_is_acceptable rejects. Without that explicit ignore, the
     base class — with setAcceptDrops(True) + DragDropMode.DragDrop
     — could re-accept the drag and reintroduce the misleading
-    'accept' cursor for unknown extensions / all-duplicate drags."""
+    'accept' cursor for unknown extensions / all-duplicate drags.
 
-    def _make_drag_enter(self, mime):
-        from PySide6.QtCore import QPoint, Qt
+    Note on the inlining: QDropEvent / QDragEnterEvent hold a
+    *non-owning* C++ pointer to the QMimeData passed in (Qt docs say
+    "QMimeData is owned by the calling code"). If the QMimeData's
+    Python wrapper goes out of scope before widget.dragEnterEvent()
+    fires, the C++ pointer dangles and PySide6 segfaults on
+    e.mimeData(). The existing TestDropEventAccepts pattern that
+    keeps `mime` as a local variable in the same scope as the event
+    is the safe one — replicating it here in each test instead of
+    factoring through a helper that returns just the event.
+    """
+
+    def test_unrecognized_url_is_ignored(self, widget, tmp_path):
+        """Dragging a .txt URL onto the list must produce ignore(),
+        not the cursor's 'accept' state."""
+        from PySide6.QtCore import QMimeData, QPoint, QUrl, Qt
         from PySide6.QtGui import QDragEnterEvent
-        return QDragEnterEvent(
+        f = tmp_path / "readme.txt"
+        f.write_bytes(b"x")
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(f))])
+        ev = QDragEnterEvent(
             QPoint(0, 0),
             Qt.DropAction.CopyAction,
             mime,
             Qt.MouseButton.LeftButton,
             Qt.KeyboardModifier.NoModifier,
         )
-
-    def _mime_with(self, paths):
-        from PySide6.QtCore import QMimeData, QUrl
-        mime = QMimeData()
-        mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
-        return mime
-
-    def test_unrecognized_url_is_ignored(self, widget, tmp_path):
-        """Dragging a .txt URL onto the list must produce ignore(),
-        not the cursor's 'accept' state."""
-        f = tmp_path / "readme.txt"
-        f.write_bytes(b"x")
-        ev = self._make_drag_enter(self._mime_with([f]))
         widget.dragEnterEvent(ev)
         assert ev.isAccepted() is False
 
     def test_accepted_url_sets_accepted(self, widget, tmp_path):
         """Sanity counter-test: a recognized image URL DOES end up
         accepted."""
+        from PySide6.QtCore import QMimeData, QPoint, QUrl, Qt
+        from PySide6.QtGui import QDragEnterEvent
         f = tmp_path / "boot.img"
         f.write_bytes(b"x")
-        ev = self._make_drag_enter(self._mime_with([f]))
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(f))])
+        ev = QDragEnterEvent(
+            QPoint(0, 0),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
         widget.dragEnterEvent(ev)
         assert ev.isAccepted() is True
 
     def test_all_duplicate_url_is_ignored(self, widget, tmp_path):
         """A drag of a file already present in the list must be
         ignored (no misleading accept cursor for a no-op drop)."""
+        from PySide6.QtCore import QMimeData, QPoint, QUrl, Qt
+        from PySide6.QtGui import QDragEnterEvent
         f = tmp_path / "boot.img"
         f.write_bytes(b"x")
         widget.add_image(FloppyImage(path=str(f)))
-        ev = self._make_drag_enter(self._mime_with([f]))
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(f))])
+        ev = QDragEnterEvent(
+            QPoint(0, 0),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
         widget.dragEnterEvent(ev)
         assert ev.isAccepted() is False
 
