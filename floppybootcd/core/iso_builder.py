@@ -199,11 +199,14 @@ def build(
         # point and prepends "/" to absolute disk paths during normalization,
         # which turns Windows paths like "C:\..." into "/C:\..." and fails
         # with "No such file or directory". Run with cwd set to the staging
-        # root and pass a plain relative name to sidestep that.
+        # root and pass a plain relative name to sidestep that. The output
+        # path is resolved to absolute first so it isn't reinterpreted
+        # against the new cwd (and then wiped by the staging cleanup).
+        out_abs = options.output_path.resolve()
         cmd = [
             xorriso,
             "-as", "mkisofs",
-            "-o", str(options.output_path),
+            "-o", str(out_abs),
             "-V", volid,
             "-J", "-R",
             "-b", result.boot_image_relpath,
@@ -228,12 +231,12 @@ def build(
         if rc != 0:
             raise RuntimeError(f"xorriso exited with status {rc}")
 
-        size = options.output_path.stat().st_size
-        log(f"Built {options.output_path} ({size / (1024*1024):.1f} MiB)")
+        size = out_abs.stat().st_size
+        log(f"Built {out_abs} ({size / (1024*1024):.1f} MiB)")
         progress("Build complete.", 1.0)
 
         return BuildResult(
-            iso_path=options.output_path,
+            iso_path=out_abs,
             staging_path=staging_root if options.keep_staging else None,
         )
     finally:
