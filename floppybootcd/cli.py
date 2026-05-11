@@ -146,14 +146,6 @@ def _run_build(path: str, output: str, xorriso: str, keep_staging: bool) -> int:
     project = _load_project(path)
     if project is None:
         return 1
-    load_plugins()
-    output_path = Path(output).expanduser().resolve(strict=False)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    options = BuildOptions(
-        output_path=output_path,
-        xorriso_override=xorriso,
-        keep_staging=keep_staging,
-    )
 
     def _progress(msg: str, percent: float) -> None:
         # iso_builder uses negative values when no numeric percentage is available.
@@ -163,6 +155,14 @@ def _run_build(path: str, output: str, xorriso: str, keep_staging: bool) -> int:
             print(f"[{percent * 100:5.1f}%] {msg}")
 
     try:
+        load_plugins()
+        output_path = Path(output).expanduser().resolve(strict=False)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        options = BuildOptions(
+            output_path=output_path,
+            xorriso_override=xorriso,
+            keep_staging=keep_staging,
+        )
         result: BuildResult = build_iso(project, options, progress=_progress, log=print)
     except Exception as exc:
         print(str(exc), file=sys.stderr)
