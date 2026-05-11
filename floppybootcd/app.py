@@ -84,6 +84,19 @@ class FloppyBootCDApplication(QApplication):
         Split out from :meth:`_dispatch` so callers that have already
         canonicalized — notably :meth:`_dispatch_batch` — don't pay
         for a redundant ``Path.expanduser().resolve()`` per entry.
+
+        ``.fbcd`` is routed by **suffix only**, not ``is_file() and
+        suffix``. Routing on existence here would silently swallow
+        ``floppybootcd missing.fbcd`` — the path isn't a file, so we'd
+        fall into ``walk_floppy_images()`` which returns nothing, and
+        the app would launch with an empty Untitled project, leaving
+        the user to wonder if they typo'd the name. Routing on suffix
+        alone hands the path to ``open_project_path``, which surfaces
+        the underlying ``FileNotFoundError`` via its "Open failed"
+        dialog. Directories named ``foo.fbcd/`` land in the same
+        bucket and produce the same dialog (``Project.load`` will
+        raise on the directory) — that's still strictly better than
+        silence.
         """
         win = self._main_window
         if win is None:
@@ -94,7 +107,7 @@ class FloppyBootCDApplication(QApplication):
         from .core.image_prep import walk_floppy_images
 
         p = Path(canonical)
-        if p.is_file() and p.suffix.lower() == PROJECT_EXT:
+        if p.suffix.lower() == PROJECT_EXT:
             win.open_project_path(canonical)
             return
         found = walk_floppy_images(p)
@@ -118,14 +131,18 @@ class FloppyBootCDApplication(QApplication):
         first one — the project replaces the entire image list
         anyway, so the rest of the batch would have been clobbered.
 
+        Pre-scan keys on **suffix**, not existence, for the same
+        reason :meth:`_dispatch_canonical` does: ``floppybootcd
+        boot.img missing.fbcd`` should surface the missing-project
+        error rather than silently importing only the floppy image.
+
         Canonicalizes each path once up front and feeds the
         canonical form straight to :meth:`_dispatch_canonical`, so
         even big argv lists don't repeat the resolve() work.
         """
         canonical = [self._canonicalize(p) for p in paths]
         for cp in canonical:
-            cp_path = Path(cp)
-            if cp_path.is_file() and cp_path.suffix.lower() == PROJECT_EXT:
+            if Path(cp).suffix.lower() == PROJECT_EXT:
                 self._dispatch_canonical(cp)
                 return
         for cp in canonical:

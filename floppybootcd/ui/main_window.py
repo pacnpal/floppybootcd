@@ -396,9 +396,18 @@ class MainWindow(QMainWindow):
             # Atomic rollback. _reload_from_project may have partially
             # populated some widgets before raising; re-running it
             # against the restored project resyncs them.
+            #
+            # Order matters: _reload_from_project() unconditionally
+            # sets self._dirty = False at the end (it's the "we just
+            # loaded a fresh project, nothing's changed yet" signal
+            # for the normal success path). If we restore _dirty
+            # *before* the reload, the reload wipes it. Restore the
+            # state-bearing fields first, run the reload to resync
+            # widgets, then re-apply prev_dirty so a dirty project
+            # the user was just looking at stays marked dirty after
+            # a failed open.
             self.project = prev_project
             self.project_path = prev_path
-            self._dirty = prev_dirty
             try:
                 self._reload_from_project()
             except Exception:
@@ -406,6 +415,8 @@ class MainWindow(QMainWindow):
                 # the previous project is what was already on screen),
                 # don't mask the original error with a secondary one.
                 pass
+            self._dirty = prev_dirty
+            self._update_title()
             QMessageBox.critical(self, "Open failed", str(e))
 
     def _save_project(self) -> bool:
@@ -489,13 +500,24 @@ class MainWindow(QMainWindow):
         # image_prep.normalize_for_dedup for the rationale.
         from ..core.image_prep import normalize_for_dedup
         existing = {normalize_for_dedup(i.path) for i in self.project.images}
+        added_any = False
         for p in paths:
-            if normalize_for_dedup(p) in existing:
+            key = normalize_for_dedup(p)
+            if key in existing:
                 continue
-            existing.add(normalize_for_dedup(p))  # within-call dedup too
+            existing.add(key)  # within-call dedup too
             img = FloppyImage(path=p, label=Path(p).stem)
             self.project.images.append(img)
             self.list_widget.add_image(img)
+            added_any = True
+        # Guard side effects so a duplicate-only add (every dropped path
+        # matched an existing image) doesn't flip the project to dirty
+        # or recompute the capacity label for no reason. Without this
+        # the title bar grows a bullet after a no-op drag-drop, which
+        # then prompts an "unsaved changes?" dialog on close even
+        # though nothing changed.
+        if not added_any:
+            return
         self.project.ensure_one_default()
         self._refresh_default_marker()
         self._refresh_capacity_label()

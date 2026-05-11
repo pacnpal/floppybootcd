@@ -92,6 +92,30 @@ class TestMainWindowAddPaths:
         win._add_paths([str(f), str(f), str(f).replace("\\", "/")])
         assert len(win.project.images) == 1
 
+    def test_duplicate_only_add_does_not_mark_dirty(self, win, tmp_path):
+        """A second drop of an already-listed file is a no-op. Without
+        the added_any guard it used to flip _dirty=True even though
+        nothing changed, which then prompted "Save changes?" on close
+        even though the user hadn't touched anything."""
+        f = tmp_path / "a.img"
+        f.write_bytes(b"x")
+        win._add_paths([str(f)])
+        # Clear dirty manually to isolate the second call.
+        win._dirty = False
+        win._add_paths([str(f)])
+        assert win._dirty is False, (
+            "duplicate-only add should leave the dirty flag alone"
+        )
+        # And the image list is unchanged.
+        assert len(win.project.images) == 1
+
+    def test_empty_add_paths_does_not_mark_dirty(self, win):
+        """An empty list is also a no-op — _add_paths used to mark dirty
+        unconditionally."""
+        assert win._dirty is False
+        win._add_paths([])
+        assert win._dirty is False
+
 
 class TestSetDefault:
     def test_set_default_makes_others_non_default(self, win, qtbot, tmp_path):
@@ -280,6 +304,50 @@ class TestOpenProjectPath:
         # Widgets resynced to the original project.
         assert win.title_edit.text() == "Original"
         assert win.timeout_spin.value() == 42
+
+    def test_open_project_path_rollback_preserves_dirty(
+        self, win, tmp_path, monkeypatch
+    ):
+        """Regression: the rollback path used to restore _dirty BEFORE
+        calling _reload_from_project(), which unconditionally sets
+        _dirty=False at the end. The net effect was that opening a
+        broken .fbcd silently clean-flagged a previously-dirty project
+        — so the next close skipped the unsaved-changes prompt and
+        lost the user's in-flight edits."""
+        seen = {}
+        def fake_critical(parent, title, message):
+            seen["title"] = title
+            seen["message"] = message
+
+        import floppybootcd.ui.main_window as mw_mod
+        monkeypatch.setattr(mw_mod.QMessageBox, "critical", fake_critical)
+
+        # Establish a dirty current project.
+        win.project = Project(title="In Progress", timeout_secs=15)
+        win.project_path = None
+        win._reload_from_project()  # clean
+        win.title_edit.setText("In Progress edited")  # user edit → dirty
+        assert win._dirty is True
+
+        # Try to open a malformed .fbcd that survives Project.load but
+        # blows up reload (same trick as the rollback test above).
+        import json
+        bad = tmp_path / "bad.fbcd"
+        bad.write_text(json.dumps({
+            "title": "X", "images": [],
+            "timeout_secs": "not an int", "menu_style": "text",
+            "bootloader": "isolinux", "syslinux_version": "6.03",
+            "background_image": "", "notes": "",
+        }))
+
+        win.open_project_path(str(bad))
+
+        # Error surfaced, AND the user's dirty edit survives.
+        assert "Open failed" in seen.get("title", "")
+        assert win._dirty is True, (
+            "rollback lost the previously-dirty flag — closing the "
+            "window now would skip the unsaved-changes prompt"
+        )
 
 
 class TestReloadDoesNotMarkDirty:

@@ -179,7 +179,20 @@ class ImageListWidget(QListWidget):
 
     def dropEvent(self, e: QDropEvent) -> None:
         mime = e.mimeData()
-        if mime.hasUrls() and self.mime_is_acceptable(mime):
+        if mime.hasUrls():
+            # All URL drops route through this branch — never fall
+            # through to super().dropEvent for a URL-bearing event.
+            # QListWidget's base implementation, with setAcceptDrops
+            # and DragDrop mode, treats unhandled URLs as candidates
+            # for the model and can insert raw QListWidgetItems
+            # holding URL strings, which then crash _apply_exists_color
+            # (it expects FloppyImage in UserRole, finds None on a
+            # base-class item). Explicit handling here keeps the
+            # widget's invariant — "every row is a FloppyImage" —
+            # intact regardless of what the user drops.
+            if not self.mime_is_acceptable(mime):
+                e.ignore()
+                return
             # Both this widget and the main window route external
             # drops through parse_dropped_urls() so the two drop
             # targets always agree on what counts. See that helper
@@ -201,9 +214,10 @@ class ImageListWidget(QListWidget):
                 return
             e.ignore()
             return
-        # Only emit items_reordered for genuine in-widget moves —
-        # falling through to super() for an external non-accepted
-        # drop (a .txt file, say) used to fire items_reordered too,
+        # No URLs: internal drag-reorder (or some other non-URL drag
+        # the base class knows about). Only emit items_reordered for
+        # genuine in-widget moves — falling through to super() for
+        # an external non-URL drop used to fire items_reordered too,
         # which marked the project dirty even though nothing changed.
         was_internal = e.source() is self
         super().dropEvent(e)

@@ -92,9 +92,12 @@ class TestDispatchBatch:
         return Stub(), calls
 
     def test_no_fbcd_dispatches_every_path(self, tmp_path):
-        a = tmp_path / "a.img"; a.write_bytes(b"")
-        b = tmp_path / "b.imz"; b.write_bytes(b"")
-        c = tmp_path / "c.vfd"; c.write_bytes(b"")
+        a = tmp_path / "a.img"
+        a.write_bytes(b"")
+        b = tmp_path / "b.imz"
+        b.write_bytes(b"")
+        c = tmp_path / "c.vfd"
+        c.write_bytes(b"")
         stub, calls = self._make_stub()
         stub._dispatch_batch([str(a), str(b), str(c)])
         # All three dispatched in order.
@@ -105,9 +108,12 @@ class TestDispatchBatch:
         # alone — opening it replaces the project, so adding the
         # other paths first would just dirty a project the user
         # never asked to create.
-        img = tmp_path / "boot.img"; img.write_bytes(b"")
-        proj = tmp_path / "p.fbcd"; proj.write_bytes(b"{}")
-        other = tmp_path / "more.img"; other.write_bytes(b"")
+        img = tmp_path / "boot.img"
+        img.write_bytes(b"")
+        proj = tmp_path / "p.fbcd"
+        proj.write_bytes(b"{}")
+        other = tmp_path / "more.img"
+        other.write_bytes(b"")
         stub, calls = self._make_stub()
         stub._dispatch_batch([str(img), str(proj), str(other)])
         # Only the .fbcd is dispatched.
@@ -115,8 +121,10 @@ class TestDispatchBatch:
 
     def test_fbcd_anywhere_in_batch_wins(self, tmp_path):
         # The .fbcd is the LAST entry — still wins.
-        img = tmp_path / "first.img"; img.write_bytes(b"")
-        proj = tmp_path / "last.fbcd"; proj.write_bytes(b"{}")
+        img = tmp_path / "first.img"
+        img.write_bytes(b"")
+        proj = tmp_path / "last.fbcd"
+        proj.write_bytes(b"{}")
         stub, calls = self._make_stub()
         stub._dispatch_batch([str(img), str(proj)])
         assert calls == [str(proj.resolve())]
@@ -126,8 +134,10 @@ class TestDispatchBatch:
         # Opening multiple projects sequentially would prompt the
         # user to save between each; pick one and let the user
         # File→Open the others if they want.
-        a = tmp_path / "first.fbcd"; a.write_bytes(b"{}")
-        b = tmp_path / "second.fbcd"; b.write_bytes(b"{}")
+        a = tmp_path / "first.fbcd"
+        a.write_bytes(b"{}")
+        b = tmp_path / "second.fbcd"
+        b.write_bytes(b"{}")
         stub, calls = self._make_stub()
         stub._dispatch_batch([str(a), str(b)])
         assert calls == [str(a.resolve())]
@@ -136,3 +146,67 @@ class TestDispatchBatch:
         stub, calls = self._make_stub()
         stub._dispatch_batch([])
         assert calls == []
+
+    def test_missing_fbcd_still_dispatches_to_project_path(self, tmp_path):
+        """Regression: routing on ``is_file() AND suffix == .fbcd``
+        meant ``floppybootcd missing.fbcd`` silently no-op'd — the
+        path isn't a file, so the batch pre-scan fell through to the
+        generic image-walk branch, which finds nothing. Users got an
+        empty Untitled window with no clue that their path was wrong.
+
+        Suffix-only routing hands the path straight to
+        ``_dispatch_canonical`` (and thence to ``open_project_path``),
+        which surfaces the underlying ``FileNotFoundError`` via the
+        "Open failed" dialog."""
+        missing = tmp_path / "nope.fbcd"
+        # File deliberately not written.
+        stub, calls = self._make_stub()
+        stub._dispatch_batch([str(missing)])
+        # Still dispatched (canonicalized) — the actual file-not-found
+        # error is surfaced downstream by open_project_path.
+        assert calls == [str(missing.resolve())]
+
+
+class TestDispatchCanonical:
+    """``_dispatch_canonical`` is the single funnel every entry point
+    (CLI argv, QFileOpenEvent, set_main_window flush) reaches via
+    ``_dispatch_batch``. Its routing rule changed from "is_file() AND
+    suffix" to "suffix only" so missing .fbcd paths surface an error
+    instead of silently no-op'ing through the walk-images branch."""
+
+    def _make_stub_with_win(self):
+        opened: list[str] = []
+        added: list[list[str]] = []
+
+        class FakeWin:
+            def open_project_path(self, p):
+                opened.append(p)
+
+            def add_paths(self, ps):
+                added.append(list(ps))
+
+        class Stub:
+            _canonicalize = staticmethod(FloppyBootCDApplication._canonicalize)
+            _pending_open_paths: list[str] = []
+            _main_window = FakeWin()
+
+        Stub._dispatch_canonical = FloppyBootCDApplication._dispatch_canonical
+        return Stub(), opened, added
+
+    def test_missing_fbcd_routes_to_open_project_path(self, tmp_path):
+        """A canonical .fbcd path that doesn't exist on disk still goes
+        to open_project_path so the user sees an error dialog rather
+        than a silent no-op."""
+        missing = tmp_path / "ghost.fbcd"
+        stub, opened, added = self._make_stub_with_win()
+        stub._dispatch_canonical(str(missing))
+        assert opened == [str(missing)]
+        assert added == []
+
+    def test_existing_fbcd_routes_to_open_project_path(self, tmp_path):
+        proj = tmp_path / "real.fbcd"
+        proj.write_bytes(b"{}")
+        stub, opened, added = self._make_stub_with_win()
+        stub._dispatch_canonical(str(proj))
+        assert opened == [str(proj)]
+        assert added == []
