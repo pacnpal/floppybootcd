@@ -141,18 +141,23 @@ def main() -> int:
     win = MainWindow()
     app.set_main_window(win)                   # flush any QFileOpenEvent buffered at launch
 
-    # CLI invocation paths: if anything after argv[0] looks like a
-    # .fbcd or a floppy image / folder, open it. Covers Windows file
-    # double-click (which spawns floppybootcd.exe <path>) and Linux
-    # xdg-open (likewise). Guarding against the empty string matters
-    # because Path("").exists() returns True (it resolves to the
-    # current working directory), which would have us recursively
-    # scan CWD for floppies on any `floppybootcd ""` invocation.
+    # CLI invocation paths: forward anything after argv[0] to
+    # _dispatch. Covers Windows file double-click (which spawns
+    # floppybootcd.exe <path>), Linux xdg-open (likewise), and shell
+    # invocations like `floppybootcd ~/project.fbcd`. _dispatch
+    # canonicalizes its input (expanduser + resolve) and silently
+    # no-ops for paths that don't exist or that aren't a recognized
+    # floppy image / folder / .fbcd, so we DON'T pre-check existence
+    # here — pre-checking with a literal "~/foo" would skip dispatch
+    # for shell-quoted paths whose tilde the OS hasn't expanded yet
+    # (PowerShell, cmd.exe with delayed expansion, etc.). The empty-
+    # string and Qt-flag guards stay; without them
+    # `floppybootcd ""` would Path("").exists() == True (resolves to
+    # CWD) and recurse the working directory.
     for arg in sys.argv[1:]:
         if not arg or arg.startswith("-"):
             continue  # skip empty / Qt flag args
-        if Path(arg).exists():
-            app._dispatch(arg)
+        app._dispatch(arg)
 
     win.show()
     return app.exec()
