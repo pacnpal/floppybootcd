@@ -1,0 +1,53 @@
+postbeep_schema = 1
+
+[project]
+slug     = "floppybootcd"
+name     = "FloppyBootCD"
+tagline  = "Turns boot floppy images into bootable CDs."
+category = "vintage_pc"
+status   = "stable"
+license  = "MIT"
+github   = "pacnpal/floppybootcd"
+homepage = "http://www.postbeep.net/projects/floppybootcd/"
+
+[directory]
+featured = true
+order    = 10
+nsfw     = false
+
+[description]
+short = "A small tool that wraps an old boot floppy image in a CD image so machines with no floppy drive can still boot it."
+long = """
+**FloppyBootCD** takes a floppy image (`.img`, `.ima`, `.vfd`, `.flp`,
+or WinImage `.imz`) and emits a bootable ISO. The trick is `xorriso`
+doing the El Torito work; this just gives you a friendlier front end
+and bundles a known-good `xorriso` build so you do not have to chase
+down dependencies.
+
+- Drop in your floppy image
+- Pick the output ISO name
+- Burn the ISO to a CD-R, or attach it to a VM
+
+Useful when you have a piece of 90s hardware that boots from CD but no
+longer has a working floppy drive, which is most of them by now.
+"""
+
+[platforms]
+linux   = true
+macos   = true
+windows = true
+docker  = false
+dos     = false
+
+[buttons]
+# Path relative to this manifest. The hub fetcher rewrites this field
+# to `<slug>_button.gif` when it lands in src/content/projects/
+# alongside the other manifests.
+"88x31" = "button.gif"
+alt     = "FloppyBootCD 88x31 button"
+
+[links]
+docs        = "https://github.com/pacnpal/floppybootcd#readme"
+issues      = "https://github.com/pacnpal/floppybootcd/issues"
+source      = "https://github.com/pacnpal/floppybootcd"
+release_log = "https://github.com/pacnpal/floppybootcd/releases"
