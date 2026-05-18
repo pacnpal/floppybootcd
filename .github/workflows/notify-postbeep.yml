@@ -53,10 +53,12 @@ jobs:
           REF:     ${{ github.sha }}
           REASON:  ${{ github.event_name }}
         run: |
+          set -euo pipefail
           # gh CLI is preinstalled on ubuntu-latest. Build the payload
           # with jq so values are JSON-encoded safely (a tag like
           # `v1.0"weird"` would otherwise corrupt a string-interpolated
-          # JSON body and 4xx the request).
+          # JSON body and 4xx the request). pipefail above ensures a
+          # jq failure isn't masked by a successful gh api downstream.
           jq -n \
             --arg project "$PROJECT" \
             --arg owner "$OWNER" \
