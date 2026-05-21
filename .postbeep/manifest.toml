@@ -21,7 +21,7 @@ long = """
 **FloppyBootCD** takes a floppy image (`.img`, `.ima`, `.vfd`, `.flp`,
 or WinImage `.imz`) and emits a bootable ISO. The trick is `xorriso`
 doing the El Torito work; this just gives you a friendlier front end
-and bundles a known-good `xorriso` build so you do not have to chase
+and bundles a known-good `xorriso` build so you don't have to chase
 down dependencies.
 
 - Drop in your floppy image
