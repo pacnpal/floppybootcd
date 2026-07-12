@@ -1,0 +1,50 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "config:best-practices",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "America/New_York",
+  "schedule": ["* 0-5 * * 1-5", "* * * * 0,6"],
+  "prHourlyLimit": 3,
+  "prConcurrentLimit": 10,
+  "platformAutomerge": true,
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "schedule": ["* * * * 1"]
+  },
+  "packageRules": [
+    {
+      "description": "Automerge non-major updates for stable (>=1.0.0) runtime dependencies once tests pass",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true
+    },
+    {
+      "description": "Automerge all non-major updates for test/optional dependencies",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.optional-dependencies", "build-system.requires"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge GitHub Actions minor, patch, and digest updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
+      "automerge": true
+    },
+    {
+      "description": "Require manual review for all major updates",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ]
+}
