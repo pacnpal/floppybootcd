@@ -25,7 +25,7 @@
       "matchManagers": ["pep621"],
       "matchDepTypes": ["project.dependencies"],
       "matchUpdateTypes": ["minor", "patch"],
-      "matchCurrentVersion": "!/^0/",
+      "matchCurrentVersion": ">=1.0.0",
       "automerge": true
     },
     {
