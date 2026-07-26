@@ -36,7 +36,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Set up MSYS2
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
         with:
           msystem: MSYS
           update: false
@@ -64,7 +64,7 @@ jobs:
           ./staging-xorriso/bin/xorriso.exe -version | head -3
 
       - name: Upload Windows xorriso bundle
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: xorriso-windows-bundle
           path: staging-xorriso/
@@ -125,13 +125,13 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
 
@@ -189,7 +189,7 @@ jobs:
 
       - name: Download Windows xorriso bundle (from prep job)
         if: matrix.xorriso_method == 'windows-shared'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: xorriso-windows-bundle
           path: staging-xorriso/
@@ -755,7 +755,7 @@ jobs:
           Compress-Archive -Path floppybootcd -DestinationPath "floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.zip"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: floppybootcd-${{ matrix.label }}
           path: dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.${{ matrix.artifact_ext }}
@@ -768,7 +768,7 @@ jobs:
       # kill the tar.gz artifact upload.
       - name: Upload Linux package artifacts
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: floppybootcd-${{ matrix.label }}-packages
           path: |
@@ -797,7 +797,7 @@ jobs:
 
     steps:
       - name: Check out source (for version resolution)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && github.event.inputs.tag || github.ref }}
           fetch-depth: 0
@@ -817,13 +817,13 @@ jobs:
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
 
       - name: Download macOS arm64 artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: floppybootcd-macos-arm64
           path: input/arm64/
 
       - name: Download macOS x86_64 artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: floppybootcd-macos-x86_64
           path: input/x86_64/
@@ -1034,7 +1034,7 @@ jobs:
             "../../dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip"
 
       - name: Upload universal2 artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: floppybootcd-macos-universal2
           path: dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip
@@ -1048,7 +1048,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           path: artifacts
           pattern: floppybootcd-*
@@ -1058,7 +1058,7 @@ jobs:
         run: ls -la artifacts
 
       - name: Attach binaries to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: artifacts/*
           fail_on_unmatched_files: true
