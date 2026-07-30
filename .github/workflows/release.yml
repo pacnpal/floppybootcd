@@ -64,7 +64,7 @@ jobs:
           ./staging-xorriso/bin/xorriso.exe -version | head -3
 
       - name: Upload Windows xorriso bundle
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: xorriso-windows-bundle
           path: staging-xorriso/
@@ -189,7 +189,7 @@ jobs:
 
       - name: Download Windows xorriso bundle (from prep job)
         if: matrix.xorriso_method == 'windows-shared'
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: xorriso-windows-bundle
           path: staging-xorriso/
@@ -755,7 +755,7 @@ jobs:
           Compress-Archive -Path floppybootcd -DestinationPath "floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.zip"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: floppybootcd-${{ matrix.label }}
           path: dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.${{ matrix.artifact_ext }}
@@ -768,7 +768,7 @@ jobs:
       # kill the tar.gz artifact upload.
       - name: Upload Linux package artifacts
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: floppybootcd-${{ matrix.label }}-packages
           path: |
@@ -817,13 +817,13 @@ jobs:
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
 
       - name: Download macOS arm64 artifact
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: floppybootcd-macos-arm64
           path: input/arm64/
 
       - name: Download macOS x86_64 artifact
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: floppybootcd-macos-x86_64
           path: input/x86_64/
@@ -1034,7 +1034,7 @@ jobs:
             "../../dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip"
 
       - name: Upload universal2 artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: floppybootcd-macos-universal2
           path: dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip
@@ -1048,7 +1048,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
           pattern: floppybootcd-*
