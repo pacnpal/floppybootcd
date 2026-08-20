@@ -91,7 +91,18 @@ while IFS= read -r -d '' f; do
   if ! file -b "$f" 2>/dev/null | grep -q 'Mach-O'; then
     continue
   fi
-  codesign "${SIGN_ARGS[@]}" "$f"
+  if ! codesign "${SIGN_ARGS[@]}" "$f"; then
+    echo "ERROR: codesign failed on ${f#"$APP"/}" >&2
+    case "$f" in
+      *__dot__app/*)
+        echo "       That path is a PyInstaller-mangled nested .app bundle." >&2
+        echo "       Its Contents/Info.plist is a symlink, which codesign" >&2
+        echo "       refuses to sign. Unless it is needed at runtime, prune" >&2
+        echo "       it in the release workflow's macOS nested-bundle block." >&2
+        ;;
+    esac
+    exit 1
+  fi
   files_signed=$((files_signed + 1))
 done < <(find "$APP" -type f -not -type l -print0)
 
