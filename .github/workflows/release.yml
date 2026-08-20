@@ -435,6 +435,65 @@ jobs:
                -o -name 'qmltyperegistrar*' -o -name 'qmlimportscanner*' \) \
             -print -delete 2>/dev/null || true
 
+          # macOS only: PyInstaller relocates Qt's nested tool bundles
+          # (Assistant.app, Designer.app, Linguist.app, ...) into
+          # Contents/Frameworks under a mangled "<name>__dot__app" name —
+          # a real directory whose Contents/Info.plist is a symlink back
+          # into Contents/Resources. codesign refuses to sign a bundle
+          # laid out that way ("the main executable or Info.plist must be
+          # a regular file (no symlinks, etc.)"), which fails the release
+          # build outright. These are Qt developer tools: this app links
+          # QtCore/QtGui/QtWidgets only, and QtHelp — the module that
+          # would drive Assistant — is already excluded, so nothing can
+          # launch any of them. Dropping them fixes signing and shrinks
+          # the bundle.
+          #
+          # QtWebEngineProcess is the one nested app Qt genuinely needs at
+          # runtime, and it is handled differently: it cannot simply be
+          # pruned (that would ship a broken WebEngine) and it cannot be
+          # signed as-is either, since it has the same symlinked
+          # Info.plist. It cannot appear today — every WebEngine module is
+          # excluded — so if it ever does, stop the build and say what has
+          # to happen, rather than failing later inside codesign or
+          # shipping something broken.
+          if [ -d "dist/floppybootcd.app" ]; then
+            for nested_root in \
+                dist/floppybootcd.app/Contents/Frameworks/PySide6 \
+                dist/floppybootcd.app/Contents/Resources/PySide6; do
+              [ -d "$nested_root" ] || continue
+              # Capture rather than pipe from a process substitution: a
+              # find(1) failure inside <(...) does not propagate under
+              # set -e, so a broken scan would silently sweep nothing and
+              # the build would fail later inside codesign with no clue
+              # why. Command substitution makes find's exit status
+              # observable, so a failed scan stops the build here. (Names
+              # are Qt bundle names — no newlines to split on.)
+              if ! nested_apps=$(find "$nested_root" -maxdepth 3 -name '*__dot__app'); then
+                echo "ERROR: could not scan $nested_root for nested app bundles." >&2
+                exit 1
+              fi
+              [ -n "$nested_apps" ] || continue
+              while IFS= read -r nested; do
+                [ -n "$nested" ] || continue
+                base=$(basename "$nested")
+                case "$base" in
+                  *WebEngine*)
+                    echo "ERROR: $base is in the bundle." >&2
+                    echo "       Qt needs it at runtime, so it must not be pruned, but" >&2
+                    echo "       PyInstaller's mangled layout (a symlinked" >&2
+                    echo "       Contents/Info.plist) is unsignable as it stands." >&2
+                    echo "       Re-enabling WebEngine means rebuilding this helper into" >&2
+                    echo "       a signable layout — a real Info.plist inside the bundle —" >&2
+                    echo "       before macOS artifacts can ship." >&2
+                    exit 1
+                    ;;
+                esac
+                rm -rf "$nested"
+                echo "  removed ${nested#dist/floppybootcd.app/Contents/}"
+              done <<< "$nested_apps"
+            done
+          fi
+
           # Qt resources inside PySide6/Qt/.
           QT_ROOT="$PYSIDE_ROOT/Qt"
           if [ -d "$QT_ROOT" ]; then
