@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- CPython generates and executes code at runtime (ctypes trampolines,
+       PySide6/Qt's own JIT paths). Without allow-jit plus
+       allow-unsigned-executable-memory the hardened runtime kills the
+       process on launch. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- PyInstaller loads .so extension modules and Qt plugins by dlopen()
+       at runtime, and the bundled xorriso resolves dylibbundler-relocated
+       libraries via @executable_path. Library validation would refuse any
+       of those that aren't signed by the same Team ID with the same
+       signature at link time. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- PyInstaller's bootloader sets DYLD_LIBRARY_PATH for the child
+       process it re-execs. -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>
