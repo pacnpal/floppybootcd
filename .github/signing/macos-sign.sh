@@ -58,6 +58,26 @@ else
   SIGN_ARGS=(--force --sign -)
 fi
 
+# The build prunes unused PySide6 payload (typesystems/, include/, glue/,
+# support/, scripts/) out of Contents/Resources, but PyInstaller also
+# cross-links those same entries from Contents/Frameworks — so pruning
+# leaves symlinks pointing at nothing. They have to go before anything
+# walks the bundle: `xattr -cr` stats through a symlink and exits non-zero
+# on a broken one ("No such file"), codesign cannot seal a link to a
+# missing target, and Apple's notary service rejects them. Nothing is lost
+# by deleting them; they already resolve to nothing.
+dangling=0
+while IFS= read -r -d '' link; do
+  if [ ! -e "$link" ]; then
+    echo "  dropping dangling symlink: ${link#"$APP"/} -> $(readlink "$link")"
+    rm -f "$link"
+    dangling=$((dangling + 1))
+  fi
+done < <(find "$APP" -type l -print0)
+if [ "$dangling" -gt 0 ]; then
+  echo "Removed $dangling dangling symlink(s) left by the prune step."
+fi
+
 # Finder metadata and resource forks make codesign fail with "resource fork,
 # Finder information, or similar detritus not allowed".
 xattr -cr "$APP"
