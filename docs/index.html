@@ -435,6 +435,8 @@
       </p>
       <pre><code>cd ~/Downloads
 unzip floppybootcd-*-macos-&lt;arch&gt;.zip
+# Signed &amp; notarized build? Skip the next line. Check with:
+#   spctl --assess --type exec --verbose=4 floppybootcd.app
 xattr -dr com.apple.quarantine floppybootcd.app
 mv floppybootcd.app /Applications/
 open /Applications/floppybootcd.app</code></pre>

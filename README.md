@@ -111,10 +111,13 @@ Three macOS zips are published for every release. Pick the one that fits:
 cd ~/Downloads
 unzip floppybootcd-<version>-macos-<arch>.zip
 
-# 2. macOS quarantines apps downloaded from the web, and (since macOS 15
-#    Sequoia) blocks them outright with no right-click "Open" bypass.
-#    FloppyBootCD is unsigned and unnotarized, so strip the quarantine
-#    attribute before first launch:
+# 2. If the release you downloaded is signed and notarized (see below),
+#    skip straight to step 3 — it just opens. Check with:
+spctl --assess --type exec --verbose=4 floppybootcd.app
+#    "source=Notarized Developer ID" means signed; skip to step 3.
+#    Otherwise macOS quarantines apps downloaded from the web and (since
+#    macOS 15 Sequoia) blocks them outright with no right-click "Open"
+#    bypass, so strip the quarantine attribute before first launch:
 xattr -dr com.apple.quarantine floppybootcd.app
 
 # 3. Move it where you like and launch it.
@@ -135,12 +138,16 @@ right-click → Open trick.
 
 > Why the quarantine step? Apple's Gatekeeper requires apps to be both
 > code-signed with a Developer ID and notarized through Apple's service
-> before they'll launch from a downloaded zip without a warning. This
-> project does not currently distribute signed builds — the binaries are
-> ad-hoc signed, which is enough to satisfy the macOS loader but not
-> Gatekeeper. The `xattr` command above removes the "downloaded from the
-> internet" flag, which is what triggers the block; it does not disable
-> Gatekeeper or bypass any other security check.
+> before they'll launch from a downloaded zip without a warning. The
+> release pipeline signs and notarizes every macOS artifact whenever the
+> project's Apple signing credentials are configured; when they aren't,
+> builds fall back to an ad-hoc signature, which satisfies the macOS
+> loader but not Gatekeeper. The `spctl` check in step 2 tells you which
+> kind of build you have. The `xattr` command removes the "downloaded
+> from the internet" flag, which is what triggers the block; it does not
+> disable Gatekeeper or bypass any other security check. (Maintainers:
+> the setup lives in
+> [`.github/signing/README.md`](.github/signing/README.md).)
 
 #### Windows
 
@@ -1437,10 +1444,19 @@ native build the same way the x86_64 build works today.
 
 ### Code-signed and notarized macOS / Windows builds
 
-The current binaries are unsigned, which is why the README has a
-Gatekeeper / SmartScreen workaround section. Signing requires paid
-developer accounts (Apple: $99/year, Windows EV cert: ~$300/year). On
-the table if there's enough demand to justify the cost.
+**macOS: wired up, waiting on the certificate.** The release workflow
+signs every macOS bundle inside-out with a Developer ID identity and the
+hardened runtime, notarizes each artifact with Apple, and staples the
+ticket before publishing — see
+[`.github/signing/README.md`](.github/signing/README.md) for the exact
+setup. It activates the moment the six repository secrets are set; until
+then builds fall back to the previous ad-hoc signature, so nothing about
+the pipeline depends on the account existing. The remaining blocker is
+the Apple Developer Program membership ($99/year).
+
+**Windows: still unsigned**, which is why the SmartScreen note above
+stands. An EV code-signing certificate runs ~$300/year. On the table if
+there's enough demand to justify the cost.
 
 ### Flatpak / Snap for Linux
 

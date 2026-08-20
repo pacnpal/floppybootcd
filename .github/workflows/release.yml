@@ -130,6 +130,35 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
+      # The checkout above may be a historical tag (the workflow_dispatch
+      # smoke-test path), and tags older than this workflow do not contain
+      # .github/signing/. Pull the signing tooling from the dispatch
+      # revision separately so a rebuild of an old tag is still signed
+      # with the current scripts.
+      - name: Check out signing tooling
+        if: runner.os == 'macOS'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.ref }}
+          path: .signing-tooling
+          sparse-checkout: .github/signing
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Locate signing tooling
+        id: signing
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR=".signing-tooling/.github/signing"
+          if [ -x "$DIR/macos-sign.sh" ]; then
+            echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=" >> "$GITHUB_OUTPUT"
+            echo "::warning::No signing tooling at $DIR — is this a revision that predates macOS signing? macOS bundles will keep their ad-hoc signature."
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -730,6 +759,41 @@ jobs:
           # in the workflow log, not on the release page.
           ls -la dist/floppybootcd-${VER}-${LABEL}.*
 
+      # ── macOS code signing ──────────────────────────────────────────────
+      # Signing has to happen HERE: after the Info.plist patch and the
+      # xorriso / license-notice copy above, and immediately before the
+      # bundle is zipped below. Every mutation of a bundle invalidates its
+      # signature, so signing any earlier — including via PyInstaller's
+      # --codesign-identity — would simply be undone by the steps in
+      # between.
+      #
+      # Both steps degrade gracefully when the signing secrets aren't
+      # configured (fork PRs, or a repo that hasn't set them up): the
+      # import is a no-op and the bundle gets the same ad-hoc signature it
+      # carried before signing was wired up.
+
+      - name: Import Developer ID certificate (macOS)
+        if: runner.os == 'macOS' && steps.signing.outputs.dir != ''
+        shell: bash
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: ${{ steps.signing.outputs.dir }}/macos-import-cert.sh
+
+      - name: Codesign macOS .app
+        if: runner.os == 'macOS' && steps.signing.outputs.dir != ''
+        shell: bash
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -d "dist/floppybootcd.app" ]; then
+            ${{ steps.signing.outputs.dir }}/macos-sign.sh dist/floppybootcd.app
+          else
+            echo "No .app bundle in dist/ — nothing to sign."
+          fi
+
       - name: Package macOS build
         if: runner.os == 'macOS'
         shell: bash
@@ -746,6 +810,28 @@ jobs:
               "floppybootcd" \
               "floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.zip"
           fi
+
+      # Notarization runs on the zip the step above just produced, then
+      # staples the returned ticket to the .app and re-zips — a ticket
+      # can't live in the archive, only in the bundle. Without the staple,
+      # a Mac with no network access to Apple can't verify the app.
+      - name: Notarize and staple macOS build
+        if: runner.os == 'macOS' && steps.signing.outputs.dir != ''
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP="dist/floppybootcd.app"
+          ZIP="dist/floppybootcd-${{ steps.version.outputs.version }}-${{ matrix.label }}.zip"
+          if [ ! -d "$APP" ]; then
+            echo "No .app bundle in dist/ — nothing to notarize."
+            exit 0
+          fi
+          ${{ steps.signing.outputs.dir }}/macos-notarize.sh "$APP" "$ZIP"
 
       - name: Package Windows build
         if: runner.os == 'Windows'
@@ -778,6 +864,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Never leave the Developer ID private key in a keychain on a runner,
+      # even when an earlier step failed — hence always().
+      - name: Clean up signing keychain (macOS)
+        if: always() && runner.os == 'macOS' && steps.signing.outputs.dir != ''
+        shell: bash
+        run: ${{ steps.signing.outputs.dir }}/macos-cleanup-keychain.sh
+
   # ─── macOS universal2 merge ────────────────────────────────────────────────
   # PySide6 wheels on PyPI are arch-specific — there is no universal2 wheel,
   # so PyInstaller --target-arch universal2 cannot be used directly.  The
@@ -801,6 +894,33 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && github.event.inputs.tag || github.ref }}
           fetch-depth: 0
+
+      # The checkout above may be a historical tag (the workflow_dispatch
+      # smoke-test path), and tags older than this workflow do not contain
+      # .github/signing/. Pull the signing tooling from the dispatch
+      # revision separately so a rebuild of an old tag is still signed
+      # with the current scripts.
+      - name: Check out signing tooling
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.ref }}
+          path: .signing-tooling
+          sparse-checkout: .github/signing
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Locate signing tooling
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR=".signing-tooling/.github/signing"
+          if [ -x "$DIR/macos-sign.sh" ]; then
+            echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=" >> "$GITHUB_OUTPUT"
+            echo "::warning::No signing tooling at $DIR — is this a revision that predates macOS signing? macOS bundles will keep their ad-hoc signature."
+          fi
 
       - name: Resolve version
         id: version
@@ -935,14 +1055,16 @@ jobs:
             exit 1
           fi
 
-          # Re-apply ad-hoc signatures. lipo invalidates the existing
-          # per-arch code signatures left by PyInstaller. --deep re-signs
-          # every nested Mach-O binary with the ad-hoc identity (-), which
-          # is sufficient for the macOS dynamic linker. Gatekeeper bypass
-          # still requires: xattr -dr com.apple.quarantine floppybootcd.app
-          # — identical to the per-arch bundles.
-          codesign --force --deep --sign - "$UNIVERSAL_APP"
-          echo "Ad-hoc re-signed universal2 bundle."
+          # The merged bundle is deliberately left unsigned here. lipo
+          # invalidates the per-arch signatures, and merging two
+          # already-signed thin binaries does not yield a validly signed
+          # fat one — the bundle has to be re-signed from scratch. That
+          # happens in "Codesign universal2 .app" below, with the same
+          # script and entitlements the per-arch builds use, and any
+          # notarization ticket inherited from the arm64 template bundle is
+          # replaced when the universal bundle is notarized and stapled in
+          # its own right.
+          echo "Merge complete; the bundle is signed in a later step."
 
       - name: Verify universal2 binaries
         shell: bash
@@ -1023,6 +1145,37 @@ jobs:
           echo ""
           echo "All Mach-O binaries in the bundle are universal2. ✓"
 
+      - name: Import Developer ID certificate (universal2)
+        if: steps.signing.outputs.dir != ''
+        shell: bash
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: ${{ steps.signing.outputs.dir }}/macos-import-cert.sh
+
+      # Signed after the arch verification above (which only reads the
+      # binaries) and before packaging below, for the same reason as the
+      # per-arch builds: nothing may touch the bundle after it is signed.
+      # Unlike the per-arch builds — where PyInstaller leaves its own
+      # ad-hoc signature — the merged bundle is unsigned at this point, and
+      # an unsigned bundle will not launch on Apple Silicon at all. So when
+      # the signing tooling is unavailable, fall back to the ad-hoc
+      # signature the merge step used to apply rather than skipping.
+      - name: Codesign universal2 .app
+        shell: bash
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          DIR="${{ steps.signing.outputs.dir }}"
+          if [ -n "$DIR" ]; then
+            "$DIR/macos-sign.sh" work/universal/floppybootcd.app
+          else
+            echo "::warning::Signing tooling unavailable — ad-hoc signing the universal2 bundle."
+            codesign --force --deep --sign - work/universal/floppybootcd.app
+          fi
+
       - name: Package universal2 build
         shell: bash
         run: |
@@ -1033,6 +1186,23 @@ jobs:
             "floppybootcd.app" \
             "../../dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip"
 
+      # universal2 is a separate binary from the two per-arch bundles, so
+      # it needs its own notarization submission — a ticket is issued per
+      # artifact, not per release.
+      - name: Notarize and staple universal2 build
+        if: steps.signing.outputs.dir != ''
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          ${{ steps.signing.outputs.dir }}/macos-notarize.sh \
+            "work/universal/floppybootcd.app" \
+            "dist/floppybootcd-${{ steps.version.outputs.version }}-macos-universal2.zip"
+
       - name: Upload universal2 artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -1041,10 +1211,19 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Clean up signing keychain (universal2)
+        if: always() && steps.signing.outputs.dir != ''
+        shell: bash
+        run: ${{ steps.signing.outputs.dir }}/macos-cleanup-keychain.sh
+
   release:
     name: Publish release assets
     needs: [build, build-macos-universal2]
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Both conditions matter: github.ref is also refs/tags/v* when the
+    # workflow is dispatched with a tag as its ref (`gh workflow run --ref
+    # v1.2.0`), and without the event check such a manual run would publish
+    # to — or overwrite the assets on — that existing Release.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
