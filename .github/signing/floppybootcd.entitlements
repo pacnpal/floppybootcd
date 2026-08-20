@@ -11,13 +11,21 @@
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
 
-  <!-- PyInstaller loads .so extension modules and Qt plugins by dlopen()
-       at runtime, and the bundled xorriso resolves dylibbundler-relocated
-       libraries via @executable_path. Library validation would refuse any
-       of those that aren't signed by the same Team ID with the same
-       signature at link time. -->
-  <key>com.apple.security.cs.disable-library-validation</key>
-  <true/>
+  <!-- NOTE: com.apple.security.cs.disable-library-validation is
+       deliberately NOT here. It is the usual PyInstaller recipe, but it is
+       only needed when the bundle loads code signed by someone else:
+       macos-sign.sh re-signs every Mach-O in the bundle — PySide6, the Qt
+       frameworks, every .so, xorriso and its dylibbundler-relocated libs —
+       with one Developer ID identity, so library validation is satisfied
+       by the same Team ID. Apple's guidance is to re-sign dependencies
+       rather than disable the check. The app loads nothing from outside
+       the bundle (its only ctypes use is Windows-only, and xorriso is a
+       subprocess, which library validation does not police).
+
+       If a future dependency does need to load third-party code, the
+       symptom is a launch-time crash citing "code signature ... library
+       load disallowed" — see the troubleshooting note in README.md before
+       reaching for this entitlement. -->
 
   <!-- PyInstaller's bootloader sets DYLD_LIBRARY_PATH for the child
        process it re-execs. -->

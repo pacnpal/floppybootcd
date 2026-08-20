@@ -117,6 +117,23 @@ blank. Then check:
 - Download the run's artifact on a Mac and confirm it opens by
   double-click with no Gatekeeper warning and no `xattr` step.
 
+If the app is notarized but **crashes on launch** with a message citing
+`code signature ... library load disallowed` (or Console shows a
+`CODESIGNING` kill), a bundled library is being loaded that isn't signed
+with your Team ID. The scripts sign every Mach-O they can identify, so
+this means a new dependency ships code `file` doesn't report as Mach-O, or
+loads something from outside the bundle. The escape hatch is adding
+
+```xml
+<key>com.apple.security.cs.disable-library-validation</key>
+<true/>
+```
+
+to `floppybootcd.entitlements` — but find out which library first: that
+entitlement is deliberately absent (see the comment in that file), because
+re-signing dependencies is Apple's recommended alternative and this
+pipeline already does it.
+
 If notarization is rejected, the workflow prints Apple's full notary log,
 which names the offending binary and reason (almost always a missing
 `--options runtime`, a missing secure timestamp, or an unsigned nested
