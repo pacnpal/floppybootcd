@@ -101,8 +101,11 @@ workflow says so in its log). Set all six for the full path.
 
 ## Step 4 — Test without cutting a release
 
-`workflow_dispatch` runs never publish to a Release (the publish job is
-gated on `refs/tags/v*`), so a manual run is a safe end-to-end test:
+`workflow_dispatch` runs never publish to a Release — the publish job
+requires `github.event_name == 'push'` *and* a `refs/tags/v*` ref, so even
+dispatching the workflow with a tag as its ref (`gh workflow run --ref
+v1.2.0`) can't touch an existing Release. A manual run is therefore a safe
+end-to-end test:
 
 **Actions → Release Binaries → Run workflow**, leaving the tag input
 blank. Then check:
@@ -122,6 +125,16 @@ usually means a new binary got copied into the bundle *after* the signing
 step).
 
 ## Where signing sits in the pipeline, and why
+
+The signing scripts are checked out separately from the source tree, into
+`.signing-tooling/`, at `github.ref` rather than at the revision being
+built. A `workflow_dispatch` run can select a historical tag that predates
+signing; without the separate checkout the scripts would simply be absent
+from the workspace. When they are unavailable anyway (dispatching *on* a
+pre-signing ref), the macOS steps skip with a warning and the bundles keep
+their ad-hoc signature — except universal2, which falls back to an explicit
+ad-hoc signature, since the `lipo`-merged bundle is unsigned at that point
+and an unsigned bundle will not launch on Apple Silicon at all.
 
 `release.yml` mutates the `.app` after PyInstaller builds it: it patches
 `Contents/Info.plist` with the `.fbcd` document types, copies the xorriso
