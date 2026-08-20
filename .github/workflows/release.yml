@@ -446,9 +446,16 @@ jobs:
           # QtCore/QtGui/QtWidgets only, and QtHelp — the module that
           # would drive Assistant — is already excluded, so nothing can
           # launch any of them. Dropping them fixes signing and shrinks
-          # the bundle. QtWebEngineProcess is spared deliberately: it is
-          # the one nested helper Qt genuinely needs at runtime, should
-          # WebEngine ever return to the build.
+          # the bundle.
+          #
+          # QtWebEngineProcess is the one nested app Qt genuinely needs at
+          # runtime, and it is handled differently: it cannot simply be
+          # pruned (that would ship a broken WebEngine) and it cannot be
+          # signed as-is either, since it has the same symlinked
+          # Info.plist. It cannot appear today — every WebEngine module is
+          # excluded — so if it ever does, stop the build and say what has
+          # to happen, rather than failing later inside codesign or
+          # shipping something broken.
           if [ -d "dist/floppybootcd.app" ]; then
             for nested_root in \
                 dist/floppybootcd.app/Contents/Frameworks/PySide6 \
@@ -458,8 +465,14 @@ jobs:
                 base=$(basename "$nested")
                 case "$base" in
                   *WebEngine*)
-                    echo "  keeping $base (runtime helper)"
-                    continue
+                    echo "ERROR: $base is in the bundle." >&2
+                    echo "       Qt needs it at runtime, so it must not be pruned, but" >&2
+                    echo "       PyInstaller's mangled layout (a symlinked" >&2
+                    echo "       Contents/Info.plist) is unsignable as it stands." >&2
+                    echo "       Re-enabling WebEngine means rebuilding this helper into" >&2
+                    echo "       a signable layout — a real Info.plist inside the bundle —" >&2
+                    echo "       before macOS artifacts can ship." >&2
+                    exit 1
                     ;;
                 esac
                 rm -rf "$nested"
