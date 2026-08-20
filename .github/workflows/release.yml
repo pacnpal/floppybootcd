@@ -461,7 +461,20 @@ jobs:
                 dist/floppybootcd.app/Contents/Frameworks/PySide6 \
                 dist/floppybootcd.app/Contents/Resources/PySide6; do
               [ -d "$nested_root" ] || continue
-              while IFS= read -r -d '' nested; do
+              # Capture rather than pipe from a process substitution: a
+              # find(1) failure inside <(...) does not propagate under
+              # set -e, so a broken scan would silently sweep nothing and
+              # the build would fail later inside codesign with no clue
+              # why. Command substitution makes find's exit status
+              # observable, so a failed scan stops the build here. (Names
+              # are Qt bundle names — no newlines to split on.)
+              if ! nested_apps=$(find "$nested_root" -maxdepth 3 -name '*__dot__app'); then
+                echo "ERROR: could not scan $nested_root for nested app bundles." >&2
+                exit 1
+              fi
+              [ -n "$nested_apps" ] || continue
+              while IFS= read -r nested; do
+                [ -n "$nested" ] || continue
                 base=$(basename "$nested")
                 case "$base" in
                   *WebEngine*)
@@ -477,7 +490,7 @@ jobs:
                 esac
                 rm -rf "$nested"
                 echo "  removed ${nested#dist/floppybootcd.app/Contents/}"
-              done < <(find "$nested_root" -maxdepth 3 -name '*__dot__app' -print0)
+              done <<< "$nested_apps"
             done
           fi
 
