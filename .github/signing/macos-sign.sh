@@ -5,6 +5,9 @@
 #   usage: macos-sign.sh <path-to-.app>
 #
 # Reads:
+#   MACOS_SIGNING_REQUIRED  set non-empty to make an unset identity a hard
+#                        failure instead of an ad-hoc fallback. release.yml
+#                        sets it for pushed v* tags.
 #   MACOS_SIGN_IDENTITY  e.g. "Developer ID Application: Name (TEAMID)".
 #                        Unset  -> ad-hoc signature (the pre-signing
 #                                  behaviour: loadable, but Gatekeeper
@@ -51,6 +54,12 @@ if [ -n "$IDENTITY" ]; then
   # --timestamp and --options runtime are both mandatory for notarization.
   SIGN_ARGS=(--force --timestamp --options runtime
              --entitlements "$ENTITLEMENTS" --sign "$IDENTITY")
+elif [ -n "${MACOS_SIGNING_REQUIRED:-}" ]; then
+  echo "ERROR: MACOS_SIGN_IDENTITY is not set, but signing is required" >&2
+  echo "       for this build (MACOS_SIGNING_REQUIRED is set). An ad-hoc" >&2
+  echo "       signature would publish a release that Gatekeeper blocks." >&2
+  echo "       Check the repo's signing secrets." >&2
+  exit 1
 else
   echo "MACOS_SIGN_IDENTITY not set — applying an ad-hoc signature."
   echo "The bundle will load, but Gatekeeper will still require:"

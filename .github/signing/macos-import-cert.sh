@@ -9,12 +9,23 @@
 #   MACOS_CERT_PASSWORD  export password for that .p12
 #   KEYCHAIN_PASSWORD    password for the temporary keychain
 #
+#   MACOS_SIGNING_REQUIRED  set non-empty to turn that no-op into a hard
+#                        failure. release.yml sets it for pushed v* tags,
+#                        so a release can never silently ship unsigned.
+#
 # The keychain lives in $RUNNER_TEMP and is removed again by
 # macos-cleanup-keychain.sh. The login keychain is never touched.
 
 set -euo pipefail
 
 if [ -z "${MACOS_CERT_P12:-}" ]; then
+  if [ -n "${MACOS_SIGNING_REQUIRED:-}" ]; then
+    echo "ERROR: MACOS_CERT_P12 is not set, but signing is required for" >&2
+    echo "       this build (MACOS_SIGNING_REQUIRED is set). Falling back" >&2
+    echo "       to an ad-hoc signature would publish a release that" >&2
+    echo "       Gatekeeper blocks. Check the repo's signing secrets." >&2
+    exit 1
+  fi
   echo "MACOS_CERT_P12 is not set — skipping certificate import."
   echo "Builds will fall back to an ad-hoc signature."
   exit 0

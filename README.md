@@ -111,42 +111,61 @@ Three macOS zips are published for every release. Pick the one that fits:
 cd ~/Downloads
 unzip floppybootcd-<version>-macos-<arch>.zip
 
-# 2. If the release you downloaded is signed and notarized (see below),
-#    skip straight to step 3 — it just opens. Check with:
-spctl --assess --type exec --verbose=4 floppybootcd.app
-#    "source=Notarized Developer ID" means signed; skip to step 3.
-#    Otherwise macOS quarantines apps downloaded from the web and (since
-#    macOS 15 Sequoia) blocks them outright with no right-click "Open"
-#    bypass, so strip the quarantine attribute before first launch:
-xattr -dr com.apple.quarantine floppybootcd.app
-
-# 3. Move it where you like and launch it.
+# 2. Move it where you like and launch it. v1.3.2 and later are signed
+#    and notarized, so this just works.
 mv floppybootcd.app /Applications/
 open /Applications/floppybootcd.app
 
-# 4. (Optional) install xorriso. The macOS prebuilt binary already ships
+# 3. (Optional) install xorriso. The macOS prebuilt binary already ships
 #    one. Install only if FloppyBootCD reports it can't find xorriso, or
 #    if you'd rather use the Homebrew copy.
 brew install xorriso
 ```
 
-If you'd rather not touch the terminal: double-click the app, let macOS
-block it, then go to **System Settings → Privacy & Security**, scroll to
-the bottom, and click **Open Anyway** next to the FloppyBootCD entry.
-Confirm in the next dialog. On macOS 15+ this flow has replaced the older
-right-click → Open trick.
+Confirm the signature at any point with:
 
-> Why the quarantine step? Apple's Gatekeeper requires apps to be both
+```bash
+spctl --assess --type exec --verbose=4 /Applications/floppybootcd.app
+# source=Notarized Developer ID
+```
+
+<details>
+<summary><strong>Downloading v1.3.1 or older?</strong> Those builds are
+unsigned and need one extra command.</summary>
+
+Releases up to and including v1.3.1 predate the signing pipeline. macOS
+quarantines apps downloaded from the web, and since macOS 15 Sequoia it
+blocks unsigned ones outright with no right-click "Open" bypass, so strip
+the quarantine attribute after unzipping and before step 2:
+
+```bash
+xattr -dr com.apple.quarantine floppybootcd.app
+```
+
+</details>
+
+On an older, unsigned release, if you'd rather not touch the terminal:
+double-click the app, let macOS block it, then go to **System Settings →
+Privacy & Security**, scroll to the bottom, and click **Open Anyway** next
+to the FloppyBootCD entry. Confirm in the next dialog. On macOS 15+ this
+flow has replaced the older right-click → Open trick.
+
+> Why does the release matter? Apple's Gatekeeper requires apps to be both
 > code-signed with a Developer ID and notarized through Apple's service
-> before they'll launch from a downloaded zip without a warning. The
-> release pipeline signs and notarizes every macOS artifact whenever the
-> project's Apple signing credentials are configured; when they aren't,
-> builds fall back to an ad-hoc signature, which satisfies the macOS
-> loader but not Gatekeeper. The `spctl` check in step 2 tells you which
-> kind of build you have. The `xattr` command removes the "downloaded
-> from the internet" flag, which is what triggers the block; it does not
-> disable Gatekeeper or bypass any other security check. (Maintainers:
-> the setup lives in
+> before they'll launch from a downloaded zip without a warning. Every
+> macOS artifact from **v1.3.2** onward — `arm64`, `x86_64`, and
+> `universal2` — is signed and notarized by the release pipeline, so
+> Gatekeeper is satisfied and no workaround is needed. That isn't
+> best-effort: a pushed `v*` tag fails the build outright if any signing
+> or notarization credential is missing, so a release either carries a
+> real Developer ID signature and a stapled notarization ticket or it
+> never gets published. Releases up to and including v1.3.1 predate that
+> pipeline and carry only an ad-hoc signature, which satisfies the macOS
+> loader but not Gatekeeper. The `spctl` check above tells you which kind
+> of build you have. The
+> `xattr` command removes the "downloaded from the internet" flag, which
+> is what triggers the block; it does not disable Gatekeeper or bypass any
+> other security check. (Maintainers: the setup lives in
 > [`.github/signing/README.md`](.github/signing/README.md).)
 
 #### Windows
@@ -562,8 +581,8 @@ You have two options:
    [Releases page](https://github.com/pacnpal/floppybootcd/releases/latest).
    No Python required. See
    [Quick start → Download a prebuilt binary](#download-a-prebuilt-binary-recommended)
-   above for per-platform instructions, including the macOS Gatekeeper
-   workaround.
+   above for per-platform instructions, including how the signed and
+   notarized macOS builds work.
 2. **Install from source** with `uv` or `pip`. FloppyBootCD installs
    directly from this Git repository — it is not published to PyPI. The
    rest of this section covers that path.

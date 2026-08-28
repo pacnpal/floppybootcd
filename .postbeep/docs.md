@@ -41,15 +41,25 @@ Grab the build for your platform from the
 install.
 
 **macOS.** Pick `macos-universal2` if you are not sure which Mac you have; it
-runs natively on both Apple Silicon and Intel. The app is unsigned, and macOS 15
-blocks unsigned downloads outright, so strip the quarantine flag once before the
+runs natively on both Apple Silicon and Intel. As of **v1.3.2** every macOS zip
+is code-signed with an Apple Developer ID and notarized by Apple, so there is
+nothing to strip: unzip it, move it wherever you like, and open it. Gatekeeper
+lets it through on the first double-click.
+
+Verify the signature yourself if you want to:
+
+```bash
+spctl --assess --type exec --verbose=4 FloppyBootCD.app
+# source=Notarized Developer ID
+```
+
+On **v1.3.1 and older** the builds were unsigned and macOS 15 blocks unsigned
+downloads outright, so those need the quarantine flag stripped once before the
 first launch:
 
 ```bash
 xattr -dr com.apple.quarantine FloppyBootCD.app
 ```
-
-Then move it wherever you like and open it.
 
 **Windows.** Unzip it somewhere (for example `C:\Tools\`) and run it. There are
 separate x86_64 and ARM64 builds; the ARM64 build runs the x86_64 `xorriso`

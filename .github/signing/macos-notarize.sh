@@ -10,6 +10,10 @@
 #   APPLE_API_KEY_ID      the key's Key ID
 #   APPLE_API_ISSUER_ID   the issuer UUID of the App Store Connect team
 #
+#   MACOS_SIGNING_REQUIRED  set non-empty to turn that no-op into a hard
+#                       failure. release.yml sets it for pushed v* tags, so
+#                       a release can never silently ship un-notarized.
+#
 # Why re-zip: notarytool accepts a zip, but the ticket staples to the .app,
 # not to the archive around it. Stapling then re-zipping is what makes the
 # download work on a Mac that is offline or behind a firewall — without a
@@ -31,6 +35,15 @@ fi
 
 if [ -z "${APPLE_API_KEY_P8:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] \
    || [ -z "${APPLE_API_ISSUER_ID:-}" ]; then
+  if [ -n "${MACOS_SIGNING_REQUIRED:-}" ]; then
+    echo "ERROR: notarization credentials are not configured, but this" >&2
+    echo "       build requires them (MACOS_SIGNING_REQUIRED is set)." >&2
+    echo "       Gatekeeper blocks a signed-but-un-notarized app on first" >&2
+    echo "       launch, so publishing this would break the install docs." >&2
+    echo "       Check APPLE_API_KEY_P8 / APPLE_API_KEY_ID /" >&2
+    echo "       APPLE_API_ISSUER_ID." >&2
+    exit 1
+  fi
   echo "Notarization credentials not configured — skipping notarization."
   if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
     echo "This artifact is Developer ID signed but NOT notarized;"

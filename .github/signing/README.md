@@ -17,6 +17,17 @@ bundle gets the same ad-hoc signature it always had, and notarization is
 skipped with a log message. Signing turns itself on when the secrets
 exist.
 
+**Except on a release.** `release.yml` sets `MACOS_SIGNING_REQUIRED=1` for
+a pushed `v*` tag, and every script above turns its clean no-op into a
+hard failure when that is set. A tag build therefore fails fast — before
+anything reaches the Release page — if the signing tooling is missing or
+any of `MACOS_CERT_P12`, `MACOS_SIGN_IDENTITY`, `APPLE_API_KEY_P8`,
+`APPLE_API_KEY_ID`, or `APPLE_API_ISSUER_ID` is unset. This is what lets
+the install docs state flatly that v1.3.2 and later are signed and
+notarized: the fallback that would quietly contradict them can't happen on
+a release. Every other trigger — pull requests, `workflow_dispatch`
+smoke-tests, forks — keeps the graceful degradation described above.
+
 ## What you need before any of this works
 
 An **Apple Developer Program** membership: <https://developer.apple.com/programs/enroll/>

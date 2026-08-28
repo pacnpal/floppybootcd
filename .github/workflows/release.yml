@@ -20,6 +20,15 @@ permissions:
 # too. Node 20 is being removed from runners by September 2026.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # A pushed v* tag is the only thing that publishes to a Release, and the
+  # install docs promise every macOS artifact from v1.3.2 on is Developer
+  # ID signed and notarized. The signing scripts otherwise no-op cleanly
+  # when their secrets are absent — right for fork PRs and smoke-test
+  # dispatches, wrong for a release, where it would silently ship an
+  # ad-hoc-signed bundle that Gatekeeper blocks under a promise that it
+  # won't. Setting this makes the scripts fail closed instead, so a
+  # release either carries a real signature or doesn't happen.
+  MACOS_SIGNING_REQUIRED: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && '1' || '' }}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -154,6 +163,11 @@ jobs:
           DIR=".signing-tooling/.github/signing"
           if [ -x "$DIR/macos-sign.sh" ]; then
             echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          elif [ -n "${MACOS_SIGNING_REQUIRED:-}" ]; then
+            # Without the tooling every signing step below is skipped, so
+            # on a tag build this would publish an unsigned release.
+            echo "::error::No signing tooling at $DIR, but this is a tag build that publishes a Release."
+            exit 1
           else
             echo "dir=" >> "$GITHUB_OUTPUT"
             echo "::warning::No signing tooling at $DIR — is this a revision that predates macOS signing? macOS bundles will keep their ad-hoc signature."
@@ -829,7 +843,8 @@ jobs:
       # Both steps degrade gracefully when the signing secrets aren't
       # configured (fork PRs, or a repo that hasn't set them up): the
       # import is a no-op and the bundle gets the same ad-hoc signature it
-      # carried before signing was wired up.
+      # carried before signing was wired up. On a tag build that fallback
+      # is disabled — see MACOS_SIGNING_REQUIRED at the top of this file.
 
       - name: Import Developer ID certificate (macOS)
         if: runner.os == 'macOS' && steps.signing.outputs.dir != ''
@@ -976,6 +991,11 @@ jobs:
           DIR=".signing-tooling/.github/signing"
           if [ -x "$DIR/macos-sign.sh" ]; then
             echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          elif [ -n "${MACOS_SIGNING_REQUIRED:-}" ]; then
+            # Without the tooling every signing step below is skipped, so
+            # on a tag build this would publish an unsigned release.
+            echo "::error::No signing tooling at $DIR, but this is a tag build that publishes a Release."
+            exit 1
           else
             echo "dir=" >> "$GITHUB_OUTPUT"
             echo "::warning::No signing tooling at $DIR — is this a revision that predates macOS signing? macOS bundles will keep their ad-hoc signature."
