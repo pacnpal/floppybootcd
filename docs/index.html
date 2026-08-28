@@ -440,7 +440,7 @@ open /Applications/floppybootcd.app</code></pre>
       <p style="font-size:12px; margin:4px 0 8px;">
         v1.3.2 and later are signed with an Apple Developer ID and notarized,
         so they open on the first double-click &mdash; verify with
-        <code>spctl --assess --type exec --verbose=4 floppybootcd.app</code>
+        <code>spctl --assess --type exec --verbose=4 /Applications/floppybootcd.app</code>
         (<code>source=Notarized Developer ID</code>). On v1.3.1 and older the
         builds were unsigned; those need
         <code>xattr -dr com.apple.quarantine floppybootcd.app</code> once
